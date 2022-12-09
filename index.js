@@ -71,7 +71,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
     headers: {
       "Content-Type": "application/json",
       "Client-ID": clientId,
-      "Authorization": bearerToken// + authProvider
+      "Authorization": bearerToken // Generate however you need to
     }
   }
   var createWebHookBody = {
@@ -82,9 +82,8 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
     },
     "transport": {
       "method": "webhook",
-      // For testing purposes you can use an ngrok https tunnel as your callback URL
-      "callback": myUrl+"/notification", // If you change the /notification path make sure to also adjust in line 69
-      "secret": secret // Replace with your own secret
+      "callback": myUrl+"/notification", // If you change the /notification path make sure to also adjust in line 114
+      "secret": secret
     }
   }
   var responseData = ""
@@ -105,7 +104,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
 
 function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   let message = messageID + messageTimestamp + body
-  let signature = crypto.createHmac('sha256', secret).update(message) // Remember to use the same secret set at creation
+  let signature = crypto.createHmac('sha256', secret).update(message)
   let expectedSignatureHeader = "sha256=" + signature.digest("hex")
 
   return expectedSignatureHeader === messageSignature
