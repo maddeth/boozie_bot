@@ -41,7 +41,6 @@ chatClient.connect();
 
 chatClient.onRegister(() => {
   console.log("connected")
-  chatClient.say('maddeth', "Beep Boop, Running...")
 });
 
 
