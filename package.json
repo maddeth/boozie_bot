@@ -1,0 +1,21 @@
+{
+  "name": "boozie_bot",
+  "version": "1.0.0",
+  "dependencies": {
+    "@twurple/auth": "^5.2.7",
+    "@twurple/chat": "^5.2.7",
+    "express": "^4.18.2",
+    "obs-websocket-js": "^5.0.2"
+  },
+  "description": "bot for twitch",
+  "main": "bot.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module"
+}
