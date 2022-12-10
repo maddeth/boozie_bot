@@ -136,9 +136,9 @@ app.post('/notification', (req, res) => {
           chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
           changeColour(emptyString)
         } else {
-          emptyString = "0000ff"
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list, defaulting to blue. You missed out on eggs Sadge");
-          changeColour(emptyString)
+          const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
+          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list, defaulting to blue. You missed out on eggs Sadge, here is a random colour instead: " + randomString);
+          changeColour(randomString)
         }
       }
     }
