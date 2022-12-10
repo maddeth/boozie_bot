@@ -3,3 +3,4 @@ tokens.json
 nginx.conf
 start_bot.sh
 dhparam-2048.pem
+.env

@@ -19,11 +19,11 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /mnt/d/OneDrive/Documents/bot/html:/var/www/html
-      - ./nginx-conf:/etc/nginx/conf.d
+      - ${BOTPATH}/html:/var/www/html
+      - ${BOTPATH}/nginx-conf:/etc/nginx/conf.d
       - certbot-etc:/etc/letsencrypt
       - certbot-var:/var/lib/letsencrypt
-      - /mnt/d/OneDrive/Documents/bot/dhparam/:/etc/ssl/certs
+      - ${BOTPATH}/dhparam/:/etc/ssl/certs
     depends_on:
       - nodejs
     networks:
@@ -35,10 +35,10 @@ services:
     volumes:
       - certbot-etc:/etc/letsencrypt
       - certbot-var:/var/lib/letsencrypt
-      - /mnt/d/OneDrive/Documents/bot/html:/var/www/html
+      - ${BOTPATH}/html:/var/www/html
     depends_on:
       - webserver
-    command: certonly --webroot --webroot-path=/var/www/html --email maddethmail@gmail.com --agree-tos --no-eff-email --force-renewal -d maddeth.com  -d www.maddeth.com 
+    command: certonly --webroot --webroot-path=/var/www/html --email $EMAIL --agree-tos --no-eff-email --force-renewal -d $HOSTNAME  -d www.$HOSTNAME
 
 volumes:
   certbot-etc:
