@@ -137,7 +137,7 @@ app.post('/notification', (req, res) => {
           changeColour(emptyString)
         } else {
           const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list, defaulting to blue. You missed out on eggs Sadge, here is a random colour instead: " + randomString);
+          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + randomString);
           changeColour(randomString)
         }
       }
