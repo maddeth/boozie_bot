@@ -1,8 +1,10 @@
-import express from 'express';
 import bodyParser from 'body-parser';
-import { RefreshingAuthProvider } from '@twurple/auth';
-import OBSWebSocket from 'obs-websocket-js';
 import { ChatClient } from '@twurple/chat';
+import crypto from 'crypto';
+import express from 'express';
+import https from 'https';
+import OBSWebSocket from 'obs-websocket-js';
+import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
 
 const colours = JSON.parse(await fs.readFile('./colours', 'UTF-8'));
@@ -27,7 +29,7 @@ const authProvider = new RefreshingAuthProvider(
 var emptyString
 
 function getHex(event){
-  var lower = event.toLowerCase()
+  var lower = event.toLowerCase().replace(/ /g, "")
   if (colours[lower]){
     emptyString = colours[lower]
     return emptyString
@@ -54,9 +56,6 @@ app.use(bodyParser.json({
     req.rawBody = buf
   }
 }))
-
-import https from 'https';
-import crypto from 'crypto';
 
 const port = 3000
 
