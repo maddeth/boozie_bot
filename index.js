@@ -46,10 +46,6 @@ chatClient.onRegister(() => {
 });
 
 
-function onConnectedHandler (addr, port) {
-  console.log(`* Connected to ${addr}:${port}`);
-}
-
 const app = express()
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
