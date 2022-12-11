@@ -13,7 +13,7 @@ You will need to create 5 "config" files for this to run:
 Nginx config listening on port 80 and 443, redirecting all traffic to 443 (see above)
 - nginx-conf/nginx.conf
 
-You will need a .env file for docker to pick up the set vasriables
+You will need a .env file for docker to pick up the set variables
 - .env
 ```
 EMAIL=YOUR_EMAIL
