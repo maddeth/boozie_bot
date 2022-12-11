@@ -12,6 +12,8 @@ https://www.digitalocean.com/community/tutorials/how-to-secure-a-containerized-n
 You will need to create 5 "config" files for this to run:
 Nginx config listening on port 80 and 443, redirecting all traffic to 443 (see above)
 - nginx-conf/nginx.conf
+Generate private key for ssl (see above)
+ - dhparam/dhparam-2048.pem
 
 You will need a .env file for docker to pick up the set variables
 - .env
