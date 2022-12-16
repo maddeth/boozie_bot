@@ -26,14 +26,21 @@ const authProvider = new RefreshingAuthProvider(
   tokenData
 );
 
-var emptyString
-
 function getHex(event){
-  var lower = event.toLowerCase().replace(/ /g, "")
-  if (colours[lower]){
-    emptyString = colours[lower]
-    return emptyString
-  }
+  let key = Object.keys(colours).find(k => k.toLowerCase().replace(/ /g, "").includes(event));
+  let value = colours[key];
+  console.log(value);  // Outputs: "value"
+
+  return value;
+}
+
+function getColorName(event)
+{
+  let keyColour = Object.entries(colours).find(([key, value]) => value === event);
+  let outputColour = keyColour && keyColour.length > 0 ? keyColour[0] : null;
+  console.log(outputColour);
+
+  return outputColour;
 }
 
 const obs = new OBSWebSocket();
@@ -130,10 +137,11 @@ app.post('/notification', (req, res) => {
         } else if (getHex(colourString)) {
           chatClient.say(req.body.event.broadcaster_user_login, "That colour is on my list! Congratulations, Here are 4 eggs!");
           chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
-          changeColour(emptyString)
+          changeColour(getHex(colourString))
         } else {
           const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + randomString);
+          let randoColor = getColorName(randomString);
+          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColor ? randoColor : randomString));
           changeColour(randomString)
         }
       }
