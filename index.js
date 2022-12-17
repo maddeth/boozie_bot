@@ -27,14 +27,14 @@ const authProvider = new RefreshingAuthProvider(
 );
 
 function getHex(event){
-  let key = Object.keys(colours).find(k => k.toLowerCase().replace(/ /g, "").includes(event));
+  let key = Object.keys(colours).find(k => k.toLowerCase().replace(/ /g, "").includes(event.toLowerCase().replace(/ /g,"")));
   let value = colours[key];
   console.log(value);  // Outputs: "value"
 
   return value;
 }
 
-function getCoulorName(event)
+function getColourName(event)
 {
   let keyColour = Object.entries(colours).find(([key, value]) => value === event);
   let outputColour = keyColour && keyColour.length > 0 ? keyColour[0] : null;
@@ -129,11 +129,11 @@ app.post('/notification', (req, res) => {
       } else if (req.body.event.reward.title === 'Convert Feed to 2000 Eggs') {
         chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 2000");
       } else if (req.body.event.reward.title === 'Sound Alert: Shadow colour') {
-        var colourString = req.body.event.user_input.replace(/#/g, '')
+        var colourString = req.body.event.user_input.replace(/#/g, '').toLowerCase()
         var regex = /[0-9A-Fa-f]{6}/g;
         if (colourString.match(regex)){
           changeColour(colourString)
-          let colourName = getCoulorName(colourString);
+          let colourName = getColourName(colourString);
           if (colourName)
           {
             ChatClient.say("According to my list, that colour is " + colourName);
@@ -145,7 +145,7 @@ app.post('/notification', (req, res) => {
           changeColour(getHex(colourString))
         } else {
           const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-          let randoColour = getCoulorName(randomString);
+          let randoColour = getColourName(randomString);
           chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
           changeColour(randomString)
         }
