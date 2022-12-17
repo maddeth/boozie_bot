@@ -34,7 +34,7 @@ function getHex(event){
   return value;
 }
 
-function getColorName(event)
+function getCoulorName(event)
 {
   let keyColour = Object.entries(colours).find(([key, value]) => value === event);
   let outputColour = keyColour && keyColour.length > 0 ? keyColour[0] : null;
@@ -133,6 +133,11 @@ app.post('/notification', (req, res) => {
         var regex = /[0-9A-Fa-f]{6}/g;
         if (colourString.match(regex)){
           changeColour(colourString)
+          let colourName = getCoulorName(colourString);
+          if (colourName)
+          {
+            ChatClient.say("According to my list, that colour is " + colourName);
+          }
           chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
         } else if (getHex(colourString)) {
           chatClient.say(req.body.event.broadcaster_user_login, "That colour is on my list! Congratulations, Here are 4 eggs!");
@@ -140,8 +145,8 @@ app.post('/notification', (req, res) => {
           changeColour(getHex(colourString))
         } else {
           const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-          let randoColor = getColorName(randomString);
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColor ? randoColor : randomString));
+          let randoColour = getCoulorName(randomString);
+          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
           changeColour(randomString)
         }
       }
