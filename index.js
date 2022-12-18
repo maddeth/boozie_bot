@@ -136,7 +136,7 @@ app.post('/notification', (req, res) => {
           let colourName = getColourName(colourString);
           if (colourName)
           {
-            ChatClient.say("According to my list, that colour is " + colourName);
+            chatClient.say(req.body.event.broadcaster_user_login, "According to my list, that colour is " + colourName);
           }
           chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
         } else if (getHex(colourString)) {
