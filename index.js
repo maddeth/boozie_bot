@@ -111,6 +111,14 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   return expectedSignatureHeader === messageSignature
 }
 
+chatClient.onMessage((channel, user, message) => {
+  let lowerCaseMessage = message.toLowerCase();
+  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours")
+  {
+    chatClient.say(channel, `@${user} - you can find the colour list can be found https://github.com/maddeth/boozie_bot/blob/develop/colours`);
+  }
+})
+
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
       req.header("Twitch-Eventsub-Message-Id"),
