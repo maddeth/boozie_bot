@@ -115,16 +115,16 @@ chatClient.onMessage((channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
   if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours")
   {
-    chatClient.say(channel, `@${user} - you can find the colour list can be found https://github.com/maddeth/boozie_bot/blob/develop/colours`);
+    chatClient.say(channel, user + " - you can find the colour list here https://github.com/maddeth/boozie_bot/blob/develop/colours");
   }
 })
 
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
-      req.header("Twitch-Eventsub-Message-Id"),
-      req.header("Twitch-Eventsub-Message-Timestamp"),
-      req.rawBody)) {
-        res.status(403).send("Forbidden") // Reject requests with invalid signatures
+    req.header("Twitch-Eventsub-Message-Id"),
+    req.header("Twitch-Eventsub-Message-Timestamp"),
+    req.rawBody)) {
+      res.status(403).send("Forbidden") // Reject requests with invalid signatures
   } else {
     if (req.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
       console.log(req.body.challenge)
