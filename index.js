@@ -6,6 +6,7 @@ import https from 'https';
 import OBSWebSocket from 'obs-websocket-js';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
+//import mongoose from 'mongoose'; // leave this for when I add a database
 
 const colours = JSON.parse(await fs.readFile('./colours', 'UTF-8'));
 
@@ -17,6 +18,11 @@ const secret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).secret;
 const obsPassword = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsPassword;
 const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 
+const obs = new OBSWebSocket();
+const app = express()
+const port = 3000
+let myUrl = 'https://maddeth.com'
+
 const authProvider = new RefreshingAuthProvider(
   {
     clientId,
@@ -26,36 +32,35 @@ const authProvider = new RefreshingAuthProvider(
   tokenData
 );
 
-var emptyString
-
-function getHex(event){
-  var lower = event.toLowerCase().replace(/ /g, "")
-  if (colours[lower]){
-    emptyString = colours[lower]
-    return emptyString
-  }
-}
-
-const obs = new OBSWebSocket();
-
 const chatClient = new ChatClient({ authProvider, channels: ['maddeth'] });
+
 chatClient.connect();
 
 chatClient.onRegister(() => {
   console.log("connected")
 });
+  
+function getHex(event) {
+  let key = Object.keys(colours).find(k => k.toLowerCase().replace(/ /g, "").includes(event.toLowerCase().replace(/ /g,"")));
+  let value = colours[key];
+  console.log(value);  // Outputs: "value"
 
+  return value;
+}
 
-const app = express()
+function getColourName(event) {
+  let keyColour = Object.entries(colours).find(([key, value]) => value === event);
+  let outputColour = keyColour && keyColour.length > 0 ? keyColour[0] : null;
+  console.log(outputColour);
+
+  return outputColour;
+}
+
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
     req.rawBody = buf
   }
 }))
-
-const port = 3000
-
-let myUrl = 'https://maddeth.com'
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
   var createWebHookParams = {
@@ -80,6 +85,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
       "secret": secret
     }
   }
+
   var responseData = ""
   var webhookReq = https.request(createWebHookParams, (result) => {
     result.setEncoding('utf8')
@@ -104,42 +110,80 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   return expectedSignatureHeader === messageSignature
 }
 
+chatClient.onMessage((channel, user, message) => {
+  let lowerCaseMessage = message.toLowerCase();
+  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours")
+  {
+    chatClient.say(channel, user + " - you can find the colour list here https://github.com/maddeth/boozie_bot/blob/develop/colours");
+  }
+})
+
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
-      req.header("Twitch-Eventsub-Message-Id"),
-      req.header("Twitch-Eventsub-Message-Timestamp"),
-      req.rawBody)) {
-        res.status(403).send("Forbidden") // Reject requests with invalid signatures
+    req.header("Twitch-Eventsub-Message-Id"),
+    req.header("Twitch-Eventsub-Message-Timestamp"),
+    req.rawBody)) {
+      res.status(403).send("Forbidden") // Reject requests with invalid signatures
   } else {
-    if (req.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
-      console.log(req.body.challenge)
-      res.send(req.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
-    } else if (req.header("Twitch-Eventsub-Message-Type") === "notification") {
-      console.log(req.body.event.user_name + " redeemed " + "\"" + req.body.event.reward.title + "\"") // Implement your own use case with the event data at this block
-      res.send("") // Default .send is a 200 status
-      if(req.body.event.reward.title === 'Convert Feed to 100 Eggs'){
-        chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 100");
-      } else if (req.body.event.reward.title === 'Convert Feed to 2000 Eggs') {
-        chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 2000");
-      } else if (req.body.event.reward.title === 'Sound Alert: Shadow colour') {
-        var colourString = req.body.event.user_input.replace(/#/g, '')
-        var regex = /[0-9A-Fa-f]{6}/g;
-        if (colourString.match(regex)){
-          changeColour(colourString)
-          chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
-        } else if (getHex(colourString)) {
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour is on my list! Congratulations, Here are 4 eggs!");
-          chatClient.say(req.body.event.broadcaster_user_login, "!addeggs " + req.body.event.user_name + " 4");
-          changeColour(emptyString)
-        } else {
-          const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-          chatClient.say(req.body.event.broadcaster_user_login, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + randomString);
-          changeColour(randomString)
-        }
-      }
-    }
+    readTwitchEventSub(req, res)
   }
-})    
+})
+
+function readTwitchEventSub(subBody, res) {
+  if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
+    console.log(subBody.body.challenge)
+    subBody.send(subBody.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
+  } else {
+    processEventSub(subBody, res)
+  } 
+}
+
+function processEventSub(event, res) {
+  if (event.header("Twitch-Eventsub-Message-Type") === "notification") {
+    let newEvent = event.body.event.reward.title
+    let userInput = event.body.event.user_input
+    let viewerName = event.body.event.user_name
+    let channel = event.body.event.broadcaster_user_login
+
+    console.log(viewerName + " redeemed " + "\"" + newEvent + "\"") // Implement your own use case with the event data at this block
+    res.send("") // Default .send is a 200 status
+
+    actionEventSub(newEvent, userInput, viewerName, channel)
+  }
+}
+
+function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
+  if(eventTitle === 'Convert Feed to 100 Eggs'){
+    chatClient.say(channel, "!addeggs " + viewer + " 100");
+  } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
+    chatClient.say(channel, "!addeggs " + viewer + " 2000");
+  } else if (eventTitle === 'Sound Alert: Shadow colour') {
+    changeColourEvent(eventUserContent, viewer, channel)
+  }
+}
+
+function changeColourEvent(eventUserContent, viewer, channel) {
+  var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
+  var regex = /[0-9A-Fa-f]{6}/g;
+  if (colourString.match(regex)){
+    changeColour(colourString)
+    let colourName = getColourName(colourString);
+    if (colourName)
+    {
+      chatClient.say(channel, "According to my list, that colour is " + colourName);
+    }
+    chatClient.say(channel, "!addeggs " + viewer + " 4");
+  } else if (getHex(colourString)) {
+    chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
+    chatClient.say(channel, "!addeggs " + viewer + " 4");
+    changeColour(getHex(colourString))
+  } else {
+    const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
+    let randoColour = getColourName(randomString);
+    chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+    changeColour(randomString)
+  }
+}
 
 app.listen(port, () => {
   console.log(`Twitch Webhook Example listening at http://localhost:${port}`)
