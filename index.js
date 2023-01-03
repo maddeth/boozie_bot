@@ -17,11 +17,12 @@ const bearerToken = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).bear
 const secret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).secret;
 const obsPassword = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsPassword;
 const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
+const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
+const port = 3000;
+const colourList = 'https://github.com/maddeth/boozie_bot/blob/main/colours';
 
 const obs = new OBSWebSocket();
-const app = express()
-const port = 3000
-let myUrl = 'https://maddeth.com'
+const app = express();
 
 const authProvider = new RefreshingAuthProvider(
   {
@@ -60,7 +61,7 @@ app.use(bodyParser.json({
   verify: (req, res, buf) => {
     req.rawBody = buf
   }
-}))
+}));
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
   var createWebHookParams = {
@@ -73,6 +74,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
       "Authorization": bearerToken // Generate however you need to
     }
   }
+
   var createWebHookBody = {
     "type": "channel.channel_points_custom_reward_redemption.add",
     "version": "1",
@@ -97,10 +99,10 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
       res.send(responseBody)
     })
   })
-  webhookReq.on('error', (e) => { console.log("Error") })
+  webhookReq.on('error', (e) => { console.log("Webhook Request Error:" + e) })
   webhookReq.write(JSON.stringify(createWebHookBody))
   webhookReq.end()
-})
+});
 
 function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   let message = messageID + messageTimestamp + body
@@ -114,9 +116,9 @@ chatClient.onMessage((channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
   if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours")
   {
-    chatClient.say(channel, user + " - you can find the colour list here https://github.com/maddeth/boozie_bot/blob/develop/colours");
+    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
   }
-})
+});
 
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
@@ -127,7 +129,7 @@ app.post('/notification', (req, res) => {
   } else {
     readTwitchEventSub(req, res)
   }
-})
+});
 
 function readTwitchEventSub(subBody, res) {
   if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
@@ -145,8 +147,8 @@ function processEventSub(event, res) {
     let viewerName = event.body.event.user_name
     let channel = event.body.event.broadcaster_user_login
 
-    console.log(viewerName + " redeemed " + "\"" + newEvent + "\"") // Implement your own use case with the event data at this block
-    res.send("") // Default .send is a 200 status
+    console.log(viewerName + " redeemed " + "\"" + newEvent + "\"")
+    res.send("") // Send a 200 status
 
     actionEventSub(newEvent, userInput, viewerName, channel)
   }
@@ -168,8 +170,7 @@ function changeColourEvent(eventUserContent, viewer, channel) {
   if (colourString.match(regex)){
     changeColour(colourString)
     let colourName = getColourName(colourString);
-    if (colourName)
-    {
+    if (colourName) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
@@ -186,12 +187,12 @@ function changeColourEvent(eventUserContent, viewer, channel) {
 }
 
 app.listen(port, () => {
-  console.log(`Twitch Webhook Example listening at http://localhost:${port}`)
-})
+  console.log(`Twitch Webhook listening at http://localhost:${port}`)
+});
 
 app.get('/', (req, res) => {
   res.sendFile(process.cwd() + "/html/")
-})
+});
 
 async function changeColour(colour) {
   try {
