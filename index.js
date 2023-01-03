@@ -113,12 +113,19 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
 }
 
 chatClient.onMessage((channel, user, message) => {
-  let lowerCaseMessage = message.toLowerCase();
-  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours")
-  {
-    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
+  if (message.startsWith("!")){
+    let lowerCaseMessage = message.toLowerCase();
+    sendMessage(channel, lowerCaseMessage, user)
   }
 });
+
+function sendMessage(channel, message, user) {
+  if (message === "!colourlist" || message === "!colorlist" || message === "!colours") {
+    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
+  } else {
+    chatClient.say(channel, message)
+  }
+}
 
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
@@ -156,9 +163,9 @@ function processEventSub(event, res) {
 
 function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
   if(eventTitle === 'Convert Feed to 100 Eggs'){
-    chatClient.say(channel, "!addeggs " + viewer + " 100");
+    sendMessage(channel, "!addeggs " + viewer + " 100")
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
-    chatClient.say(channel, "!addeggs " + viewer + " 2000");
+    sendMessage(channel, "!addeggs " + viewer + " 2000");
   } else if (eventTitle === 'Sound Alert: Shadow colour') {
     changeColourEvent(eventUserContent, viewer, channel)
   }
@@ -171,17 +178,17 @@ function changeColourEvent(eventUserContent, viewer, channel) {
     changeColour(colourString)
     let colourName = getColourName(colourString);
     if (colourName) {
-      chatClient.say(channel, "According to my list, that colour is " + colourName);
+      sendMessage(channel, "According to my list, that colour is " + colourName);
     }
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
+    sendMessage(channel, "!addeggs " + viewer + " 4");
   } else if (getHex(colourString)) {
-    chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
+    sendMessage(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
+    sendMessage(channel, "!addeggs " + viewer + " 4");
     changeColour(getHex(colourString))
   } else {
     const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
     let randoColour = getColourName(randomString);
-    chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+    sendMessage(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
     changeColour(randomString)
   }
 }
@@ -209,17 +216,15 @@ async function changeColour(colour) {
   
   const hexToDecimal = hex => parseInt(hex, 16); 
   
-  var array = colour.match(/.{1,2}/g)
-  var actual = array.reverse().join("")
-  var thing = "ff" + actual
-  
-  const myVal = hexToDecimal(thing);
+  var arrayOfHex = colour.match(/.{1,2}/g)
+  var obsHexOrder = arrayOfHex.reverse().join("")
+  var finalHex = "ff" + obsHexOrder
+  const obsDecimalColour = hexToDecimal(finalHex);
 
   var myObject = {
-    color: myVal
+    color: obsDecimalColour
   }
   
   await obs.call('SetSourceFilterSettings',{sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject});
-  
   await obs.disconnect();
 }
