@@ -6,7 +6,7 @@ import https from 'https';
 import OBSWebSocket from 'obs-websocket-js';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
-import mongoose from 'mongoose';
+//import mongoose from 'mongoose'; // leave this for when I add a database
 
 const colours = JSON.parse(await fs.readFile('./colours', 'UTF-8'));
 
@@ -32,7 +32,7 @@ const authProvider = new RefreshingAuthProvider(
   tokenData
 );
 
-  const chatClient = new ChatClient({ authProvider, channels: ['maddeth'] });
+const chatClient = new ChatClient({ authProvider, channels: ['maddeth'] });
 
 chatClient.connect();
 
@@ -85,6 +85,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
       "secret": secret
     }
   }
+
   var responseData = ""
   var webhookReq = https.request(createWebHookParams, (result) => {
     result.setEncoding('utf8')
@@ -144,7 +145,7 @@ function processEventSub(event, res) {
     let viewerName = event.body.event.user_name
     let channel = event.body.event.broadcaster_user_login
 
-    console.log(event.body.event.user_name + " redeemed " + "\"" + newEvent + "\"") // Implement your own use case with the event data at this block
+    console.log(viewerName + " redeemed " + "\"" + newEvent + "\"") // Implement your own use case with the event data at this block
     res.send("") // Default .send is a 200 status
 
     actionEventSub(newEvent, userInput, viewerName, channel)
