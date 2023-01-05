@@ -6,7 +6,8 @@ import https from 'https';
 import OBSWebSocket from 'obs-websocket-js';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
-//import mongoose from 'mongoose'; // leave this for when I add a database
+import sqlite3 from 'sqlite3';
+import { ApiClient } from '@twurple/api';
 
 const colours = JSON.parse(await fs.readFile('./colours', 'UTF-8'));
 
@@ -40,21 +41,147 @@ chatClient.connect();
 chatClient.onRegister(() => {
   console.log("connected")
 });
-  
-function getHex(event) {
-  let key = Object.keys(colours).find(k => k.toLowerCase().replace(/ /g, "").includes(event.toLowerCase().replace(/ /g,"")));
-  let value = colours[key];
-  console.log(value);  // Outputs: "value"
 
+const api = new ApiClient({authProvider});
+
+async function getUser() {
+  let users = await api.chat.getChatters('30758517', '558612609');
+  users.data.forEach(element => {
+    console.log(element.userDisplayName)
+    addEggsToUser(1, element.userDisplayName)
+  });
+}
+
+setInterval(getUser, 900000);
+
+const colourdb = new sqlite3.Database('sqlitedb/colours.db', (err) => {
+  if (err) {
+    console.error("Error opening database " + err.message);
+  } 
+});
+
+const eggdb = new sqlite3.Database('sqlitedb/users.db', (err) => {
+  if (err) {
+    console.error("Error opening database " + err.message);
+  } 
+});
+
+async function addEggsToUser(eggsToAdd, userName) {
+  let checkUserExists = await getEggs(`SELECT EXISTS(SELECT 1 FROM users WHERE user_name = ?) AS eggs_amount`, userName)
+  if( checkUserExists === 0){
+    console.log("doesn't exist, create")
+    await dbAddEggs(`INSERT OR IGNORE INTO users (eggs_amount, user_name) VALUES (?,?)`, [eggsToAdd, userName])
+  } else {
+    let currentEggs = Number(await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
+    console.log("current Eggs: " + currentEggs + " for " + userName)
+    let totalEggsToAdd = currentEggs + eggsToAdd
+    console.log("New Eggs: " + totalEggsToAdd + " for " + userName)
+    await dbAddEggs(`UPDATE users SET eggs_amount=? WHERE user_name = ?`, [totalEggsToAdd, userName]);
+    console.log("Check Eggs Database: " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
+  }
+}
+
+async function getEggs(query, user){
+  return new Promise(function(resolve,reject){
+    eggdb.each(query, user, function(err,result){
+      if(err){return reject(err);}
+      resolve(result.eggs_amount);
+    });
+  });
+}
+
+app.get("/colours/:id", async (req, res, next) => {
+  var params = [req.params.id]
+  let result = await dbGetColour("SELECT hex_code, colour_name FROM colours WHERE colour_id = ?", params)
+  res.status(200).json(result);
+});
+
+
+app.get("/colours", (req, res, next) => {
+  colourdb.all("SELECT * FROM colours", [], (err, rows) => {
+      if (err) {
+        res.status(400).json({"error":err.message});
+        return;
+      }
+      res.status(200).json({rows});
+    });
+});
+
+app.post("/colours/", (req, res, next) => {
+  var reqBody = re.body;
+  colourdb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
+      [reqBody.colour_name, reqBody.hex_code],
+      function (err, result) {
+          if (err) {
+              res.status(400).json({ "error": err.message })
+              return;
+          }
+          res.status(201).json({
+              "colour_id": this.lastID
+          })
+      });
+});
+
+async function dbGetColourByHex(query, id){
+  return new Promise(function(resolve,reject){
+    colourdb.each(query, id, function(err,result){
+      if(err){return reject(err);}
+      resolve(result.colour_name);
+    });
+  });
+}
+
+async function dbGetColour(query, id){
+  return new Promise(function(resolve,reject){
+    colourdb.each(query, id, function(err,result){
+      if(err){return reject(err);}
+      resolve(result.colour_name + ": " + result.hex_code);
+    });
+  });
+}
+
+async function dbGetHex(query, colour){
+  return new Promise(function(resolve,reject){
+    colourdb.each(query, colour, function(err,result){
+      if(err){return reject(err);}
+      resolve(result.hex_code);
+    });
+  });
+}
+
+async function dbAddColour(query, values){
+  return new Promise(function(resolve,reject){
+    colourdb.run(query, values, function(err,result){
+      if(err){return reject(err);}
+      resolve(result);
+    });
+  });
+}
+
+async function dbAddEggs(query, values){
+  return new Promise(function(resolve,reject){
+    eggdb.run(query, values, function(err,result){
+      if(err){return reject(err);}
+      resolve(result);
+    });
+  });
+}
+
+async function getHex(event) {
+  let query = "SELECT hex_code FROM colours WHERE colour_name = ?"
+  let colourLookup = event.toLowerCase().replace(/ /g,"")
+  let value = await dbGetHex(query, colourLookup)
+  console.log("Got Hex value: " + value);
   return value;
 }
 
-function getColourName(event) {
-  let keyColour = Object.entries(colours).find(([key, value]) => value === event);
-  let outputColour = keyColour && keyColour.length > 0 ? keyColour[0] : null;
-  console.log(outputColour);
 
-  return outputColour;
+async function getColourName(event) {
+  let query = "SELECT colour_name FROM colours WHERE hex_code = ?"
+  let colourLookup = event.toLowerCase().replace(/ /g,"")
+  let value = await dbGetColourByHex(query, colourLookup)
+  console.log("Got colour value: " + value);
+  return value;
 }
 
 app.use(bodyParser.json({
@@ -113,19 +240,12 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
 }
 
 chatClient.onMessage((channel, user, message) => {
-  if (message.startsWith("!")){
-    let lowerCaseMessage = message.toLowerCase();
-    sendMessage(channel, lowerCaseMessage, user)
+  let lowerCaseMessage = message.toLowerCase();
+  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
+    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
   }
 });
 
-function sendMessage(channel, message, user) {
-  if (message === "!colourlist" || message === "!colorlist" || message === "!colours") {
-    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
-  } else {
-    chatClient.say(channel, message)
-  }
-}
 
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
@@ -163,32 +283,32 @@ function processEventSub(event, res) {
 
 function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
   if(eventTitle === 'Convert Feed to 100 Eggs'){
-    sendMessage(channel, "!addeggs " + viewer + " 100")
+    chatClient.say(channel, "!addeggs " + viewer + " 100")
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
-    sendMessage(channel, "!addeggs " + viewer + " 2000");
+    chatClient.say(channel, "!addeggs " + viewer + " 2000");
   } else if (eventTitle === 'Sound Alert: Shadow colour') {
     changeColourEvent(eventUserContent, viewer, channel)
   }
 }
 
-function changeColourEvent(eventUserContent, viewer, channel) {
+async function changeColourEvent(eventUserContent, viewer, channel) {
   var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   var regex = /[0-9A-Fa-f]{6}/g;
   if (colourString.match(regex)){
     changeColour(colourString)
-    let colourName = getColourName(colourString);
+    let colourName = await getColourName(colourString);
     if (colourName) {
-      sendMessage(channel, "According to my list, that colour is " + colourName);
+      chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
-    sendMessage(channel, "!addeggs " + viewer + " 4");
+    chatClient.say(channel, "!addeggs " + viewer + " 4");
   } else if (getHex(colourString)) {
-    sendMessage(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
-    sendMessage(channel, "!addeggs " + viewer + " 4");
+    chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
+    chatClient.say(channel, "!addeggs " + viewer + " 4");
     changeColour(getHex(colourString))
   } else {
     const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-    let randoColour = getColourName(randomString);
-    sendMessage(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+    let randoColour = await getColourName(randomString);
+    chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
     changeColour(randomString)
   }
 }
@@ -200,6 +320,7 @@ app.listen(port, () => {
 app.get('/', (req, res) => {
   res.sendFile(process.cwd() + "/html/")
 });
+
 
 async function changeColour(colour) {
   try {
