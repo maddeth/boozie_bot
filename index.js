@@ -77,7 +77,7 @@ async function addEggsToUser(eggsToAdd, userName) {
     let totalEggsToAdd = currentEggs + eggsToAdd
     console.log("New Eggs: " + totalEggsToAdd + " for " + userName)
     await dbAddEggs(`UPDATE users SET eggs_amount=? WHERE user_name = ?`, [totalEggsToAdd, userName]);
-    console.log("Check Eggs Database: " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
+    console.log("Check Eggs Database: " + userName + " has " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
   }
 }
 
@@ -97,14 +97,9 @@ app.get("/colours/:id", async (req, res, next) => {
 });
 
 
-app.get("/colours", (req, res, next) => {
-  colourdb.all("SELECT * FROM colours", [], (err, rows) => {
-      if (err) {
-        res.status(400).json({"error":err.message});
-        return;
-      }
-      res.status(200).json({rows});
-    });
+app.get("/colours", async (req, res, next) => {
+  let result = await dbGetAllColours("SELECT hex_code, colour_name FROM colours")
+  res.status(200).json(result)
 });
 
 app.post("/colours/", (req, res, next) => {
@@ -140,6 +135,15 @@ async function dbGetColour(query, id){
   });
 }
 
+async function dbGetAllColours(query){
+  return new Promise(function(resolve,reject){
+    colourdb.all(query, function(err,result){
+      if(err){return reject(err);}
+      resolve(result);
+    });
+  });
+}
+
 async function dbGetHex(query, colour){
   return new Promise(function(resolve,reject){
     colourdb.each(query, colour, function(err,result){
@@ -168,7 +172,7 @@ async function dbAddEggs(query, values){
 }
 
 async function getHex(event) {
-  let query = "SELECT hex_code FROM colours WHERE colour_name = ?"
+  let query = "SELECT hex_code FROM colours WHERE replace(colour_name, ' ', '') = ?"
   let colourLookup = event.toLowerCase().replace(/ /g,"")
   let value = await dbGetHex(query, colourLookup)
   console.log("Got Hex value: " + value);
@@ -242,7 +246,7 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
 chatClient.onMessage((channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
   if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
-    chatClient.say(channel, user + " - you can find the colour list here " + colourList);
+    chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
   }
 });
 
