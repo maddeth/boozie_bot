@@ -199,6 +199,7 @@ function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
 async function changeColourEvent(eventUserContent, viewer, channel) {
   var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   var regex = /[0-9A-Fa-f]{6}/g;
+  var findHexInDB = await getHex(colourString)
   if (colourString.match(regex)){
     await changeColour(colourString)
     let colourName = await getColourName(colourString);
@@ -206,17 +207,15 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
-  } else if (getHex(colourString)) {
-    let colourHex = await getHex(colourString)
-    chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
-    console.log(colourHex)
-    await changeColour(await getHex(colourString))
+  } else if (findHexInDB !== undefined) {
+      chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
+      chatClient.say(channel, "!addeggs " + viewer + " 4");
+      await changeColour(findHexInDB)
   } else {
-    const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-    let randoColour = await getColourName(randomString);
-    chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
-    await changeColour(randomString)
+      const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
+      let randoColour = await getColourName(randomString);
+      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+      await changeColour(randomString)
   }
 }
 
@@ -234,7 +233,6 @@ async function changeColour(colour) {
   }
   
   const hexToDecimal = hex => parseInt(hex, 16); 
-  console.log(colour.Promise)
   var arrayOfHex = colour.match(/.{1,2}/g)
   var obsHexOrder = arrayOfHex.reverse().join("")
   var finalHex = "ff" + obsHexOrder
@@ -256,10 +254,15 @@ const colourdb = new sqlite3.Database('sqlitedb/colours.db', (err) => {
 });
 
 async function dbGetColourByHex(query, id){
-  return new Promise(function(resolve,reject){
+  return new Promise((resolve,reject) => {
+    const queries = [];
     colourdb.each(query, id, function(err,result){
-      if(err){return reject(err);}
-      resolve(result.colour_name);
+      if(err){reject(err);}
+      queries.push(result.colour_name);
+    }, (err, n) => {
+      if (err) {reject(err);} else {
+        resolve(queries[0]);
+      }
     });
   });
 }
@@ -283,10 +286,15 @@ async function dbGetAllColours(query){
 }
 
 async function dbGetHex(query, colour){
-  return new Promise(function(resolve,reject){
+  return new Promise((resolve,reject) => {
+    const queries = [];
     colourdb.each(query, colour, function(err,result){
-      if(err){return reject(err);}
-      resolve(result.hex_code);
+      if(err){reject(err);}
+      queries.push(result.hex_code);
+    }, (err, n) => {
+      if (err) {reject(err);} else {
+        resolve(queries[0]);
+      }
     });
   });
 }
