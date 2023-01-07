@@ -53,7 +53,6 @@ const api = new ApiClient({authProvider});
 async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(element => {
-    console.log(element.userDisplayName)
     addEggsToUser(1, element.userDisplayName)
   });
 }
@@ -201,21 +200,23 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   var regex = /[0-9A-Fa-f]{6}/g;
   if (colourString.match(regex)){
-    changeColour(colourString)
+    await changeColour(colourString)
     let colourName = await getColourName(colourString);
     if (colourName) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
   } else if (getHex(colourString)) {
+    let colourHex = await getHex(colourString)
     chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
     chatClient.say(channel, "!addeggs " + viewer + " 4");
-    changeColour(getHex(colourString))
+    console.log(colourHex)
+    await changeColour(await getHex(colourString))
   } else {
     const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
     let randoColour = await getColourName(randomString);
     chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
-    changeColour(randomString)
+    await changeColour(randomString)
   }
 }
 
@@ -233,7 +234,7 @@ async function changeColour(colour) {
   }
   
   const hexToDecimal = hex => parseInt(hex, 16); 
-  
+  console.log(colour.Promise)
   var arrayOfHex = colour.match(/.{1,2}/g)
   var obsHexOrder = arrayOfHex.reverse().join("")
   var finalHex = "ff" + obsHexOrder
@@ -247,7 +248,7 @@ async function changeColour(colour) {
   await obs.disconnect();
 }
 
-//Clolour Database
+//Colour Database
 const colourdb = new sqlite3.Database('sqlitedb/colours.db', (err) => {
   if (err) {
     console.error("Error opening database " + err.message);
