@@ -18,6 +18,7 @@ const obsPassword = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsP
 const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
+const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 const port = 3000;
 
 const obs = new OBSWebSocket();
@@ -47,20 +48,31 @@ chatClient.onMessage(async (channel, user, message) => {
     chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
   }
   if(lowerCaseMessage.startsWith("!seteggs")){
+    let isAMod = botMod(user)
     const setEggs = lowerCaseMessage.split(" ");
     const eggNumber = parseInt(Number(setEggs[2]))
     const eggUser = setEggs[1]
-    if(setEggs.length <= 2 || setEggs.length > 3 ){
-      chatClient.say(channel, "The command is !seteggs username eggs");
-    } else if (Number.isInteger(eggNumber)){
-      chatClient.say(channel, "Adding " + eggNumber + " eggs to " + eggUser + ".");
-      await addEggsToUser(eggNumber, eggUser);
-      chatClient.say(channel, eggUser + " has " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, eggUser) + " eggs")
+    if(isAMod){
+      if(setEggs.length <= 2 || setEggs.length > 3 ){
+        chatClient.say(channel, "The command is !seteggs username eggs");
+      } else if (Number.isInteger(eggNumber)){
+        await addEggsToUser(eggNumber, eggUser, channel);
+      } else {
+        chatClient.say(channel,"The command is !seteggs username eggs");
+      }
     } else {
-      chatClient.say(channel,"The command is !seteggs username eggs");
+      chatClient.say(channel,"Looks like you are not a bot mod " + user + "... fuck off");
     }
   }
 });
+
+function botMod(modName){
+  if(modlist.includes(modName)){
+    return true;
+  } else {
+    return false;
+  }
+}
 
 //Chat API
 const api = new ApiClient({authProvider});
@@ -235,11 +247,13 @@ function processEventSub(event, res) {
 }
 
 //Event Sub actions
-function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
+async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
   if(eventTitle === 'Convert Feed to 100 Eggs'){
     chatClient.say(channel, "!addeggs " + viewer + " 100")
+    await addEggsToUser(100, viewer);
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
     chatClient.say(channel, "!addeggs " + viewer + " 2000");
+    await addEggsToUser(2000, viewer);
   } else if (eventTitle === 'Sound Alert: Shadow colour') {
     changeColourEvent(eventUserContent, viewer, channel)
   }
@@ -374,15 +388,30 @@ async function getColourName(event) {
 }
 
 //Eggs DB
-async function addEggsToUser(eggsToAdd, userName) {
+async function addEggsToUser(eggsToAdd, userName, channel) {
   let checkUserExists = await getEggs(`SELECT EXISTS(SELECT 1 FROM users WHERE user_name = ?) AS eggs_amount`, userName)
-  if( checkUserExists === 0){
+  if(checkUserExists === 0){
     console.log("User doesn't exist, create")
     await dbAddEggs(`INSERT OR IGNORE INTO users (eggs_amount, user_name) VALUES (?,?)`, [eggsToAdd, userName])
   } else {
     let currentEggs = Number(await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
     let totalEggsToAdd = currentEggs + eggsToAdd
     await dbAddEggs(`UPDATE users SET eggs_amount=? WHERE user_name = ?`, [totalEggsToAdd, userName]);
+  }
+
+  if(typeof channel !== 'undefined'){
+    const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName);
+    if(eggsToAdd === 1){ //because someone will complain otherwise
+      chatClient.say(channel, "added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd > 2) {
+      chatClient.say(channel, "added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd === -1){ //because someone complained
+      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd < 0){
+      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
+    } else {
+      chatClient.say(channel, "Why?")
+    }
   }
 }
 
