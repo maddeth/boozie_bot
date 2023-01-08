@@ -53,7 +53,7 @@ const api = new ApiClient({authProvider});
 async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(element => {
-    addEggsToUser(1, element.userDisplayName)
+    addEggsToUser(5, element.userDisplayName)
   });
 }
 
@@ -71,7 +71,7 @@ app.listen(port, () => {
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(process.cwd() + "/html/")
+  res.sendFile("/home/html/")
 });
 
 app.get("/colours/:id", async (req, res, next) => {
@@ -88,7 +88,7 @@ app.get("/colours", async (req, res, next) => {
 
 app.post("/colours/", (req, res, next) => {
   var reqBody = re.body;
-  colourdb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
+  booziedb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
       [reqBody.colour_name, reqBody.hex_code],
       function (err, result) {
           if (err) {
@@ -247,7 +247,7 @@ async function changeColour(colour) {
 }
 
 //Colour Database
-const colourdb = new sqlite3.Database('sqlitedb/colours.db', (err) => {
+const booziedb = new sqlite3.Database('/home/sqlitedb/boozie_db.db', (err) => {
   if (err) {
     console.error("Error opening database " + err.message);
   } 
@@ -256,7 +256,7 @@ const colourdb = new sqlite3.Database('sqlitedb/colours.db', (err) => {
 async function dbGetColourByHex(query, id){
   return new Promise((resolve,reject) => {
     const queries = [];
-    colourdb.each(query, id, function(err,result){
+    booziedb.each(query, id, function(err,result){
       if(err){reject(err);}
       queries.push(result.colour_name);
     }, (err, n) => {
@@ -269,7 +269,7 @@ async function dbGetColourByHex(query, id){
 
 async function dbGetColour(query, id){
   return new Promise(function(resolve,reject){
-    colourdb.each(query, id, function(err,result){
+    booziedb.each(query, id, function(err,result){
       if(err){return reject(err);}
       resolve(result.colour_name + ": " + result.hex_code);
     });
@@ -278,7 +278,7 @@ async function dbGetColour(query, id){
 
 async function dbGetAllColours(query){
   return new Promise(function(resolve,reject){
-    colourdb.all(query, function(err,result){
+    booziedb.all(query, function(err,result){
       if(err){return reject(err);}
       resolve(result);
     });
@@ -288,7 +288,7 @@ async function dbGetAllColours(query){
 async function dbGetHex(query, colour){
   return new Promise((resolve,reject) => {
     const queries = [];
-    colourdb.each(query, colour, function(err,result){
+    booziedb.each(query, colour, function(err,result){
       if(err){reject(err);}
       queries.push(result.hex_code);
     }, (err, n) => {
@@ -301,7 +301,7 @@ async function dbGetHex(query, colour){
 
 async function dbAddColour(query, values){
   return new Promise(function(resolve,reject){
-    colourdb.run(query, values, function(err,result){
+    booziedb.run(query, values, function(err,result){
       if(err){return reject(err);}
       resolve(result);
     });
@@ -325,12 +325,6 @@ async function getColourName(event) {
 }
 
 //Eggs DB
-const eggdb = new sqlite3.Database('sqlitedb/users.db', (err) => {
-  if (err) {
-    console.error("Error opening database " + err.message);
-  } 
-});
-
 async function addEggsToUser(eggsToAdd, userName) {
   let checkUserExists = await getEggs(`SELECT EXISTS(SELECT 1 FROM users WHERE user_name = ?) AS eggs_amount`, userName)
   if( checkUserExists === 0){
@@ -348,7 +342,7 @@ async function addEggsToUser(eggsToAdd, userName) {
 
 async function getEggs(query, user){
   return new Promise(function(resolve,reject){
-    eggdb.each(query, user, function(err,result){
+    booziedb.each(query, user, function(err,result){
       if(err){return reject(err);}
       resolve(result.eggs_amount);
     });
@@ -357,7 +351,7 @@ async function getEggs(query, user){
 
 async function dbAddEggs(query, values){
   return new Promise(function(resolve,reject){
-    eggdb.run(query, values, function(err,result){
+    booziedb.run(query, values, function(err,result){
       if(err){return reject(err);}
       resolve(result);
     });
