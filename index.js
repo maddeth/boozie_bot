@@ -17,6 +17,7 @@ const secret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).secret;
 const obsPassword = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsPassword;
 const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
+const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const port = 3000;
 
 const obs = new OBSWebSocket();
@@ -40,10 +41,24 @@ chatClient.onRegister(() => {
   console.log("connected")
 });
 
-chatClient.onMessage((channel, user, message) => {
+chatClient.onMessage(async (channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
-  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
+  if(lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
     chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
+  }
+  if(lowerCaseMessage.startsWith("!seteggs")){
+    const setEggs = lowerCaseMessage.split(" ");
+    const eggNumber = parseInt(Number(setEggs[2]))
+    const eggUser = setEggs[1]
+    if(setEggs.length <= 2 || setEggs.length > 3 ){
+      chatClient.say(channel, "The command is !seteggs username eggs");
+    } else if (Number.isInteger(eggNumber)){
+      chatClient.say(channel, "Adding " + eggNumber + " eggs to " + eggUser + ".");
+      await addEggsToUser(eggNumber, eggUser);
+      chatClient.say(channel, eggUser + " has " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, eggUser) + " eggs")
+    } else {
+      chatClient.say(channel,"The command is !seteggs username eggs");
+    }
   }
 });
 
@@ -52,12 +67,46 @@ const api = new ApiClient({authProvider});
 
 async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
-  users.data.forEach(element => {
-    addEggsToUser(5, element.userDisplayName)
+  users.data.forEach(async user => {
+    const check = await isSub(user.userDisplayName);
+    console.log(check)
+    addEggsToUser(check, user.userDisplayName)
   });
 }
 
-setInterval(getUser, 900000);
+async function isSub(subName){
+  const authProvider = new RefreshingAuthProvider(
+    {
+      clientId,
+      clientSecret,
+      onRefresh: async newTokenData => await fs.writeFile('./tokens_me.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
+    },
+    tokenDataMe
+  );
+  const apiSub = new ApiClient({authProvider});
+  const subs = await apiSub.subscriptions.getSubscriptionsPaginated('30758517').getAll();
+  const subsData = subs.map(function(sub){
+    return sub.userDisplayName;
+  });
+  if(subsData.includes(subName)){
+    return 10;
+  } else {
+    return 5;
+  }
+}
+
+// setInterval(isStreamLive(), 900000);
+
+setInterval(async function() {await isStreamLive("maddeth")}, 900000);
+
+async function isStreamLive(userName) {
+  const stream = await api.streams.getStreamByUserName({name: userName,});
+	if (stream !== null) {
+    await getUser();
+  } else {
+    console.log("Stream offline")
+  }
+}
 
 // Express App
 app.use(bodyParser.json({
@@ -328,15 +377,12 @@ async function getColourName(event) {
 async function addEggsToUser(eggsToAdd, userName) {
   let checkUserExists = await getEggs(`SELECT EXISTS(SELECT 1 FROM users WHERE user_name = ?) AS eggs_amount`, userName)
   if( checkUserExists === 0){
-    console.log("doesn't exist, create")
+    console.log("User doesn't exist, create")
     await dbAddEggs(`INSERT OR IGNORE INTO users (eggs_amount, user_name) VALUES (?,?)`, [eggsToAdd, userName])
   } else {
     let currentEggs = Number(await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
-    console.log("current Eggs: " + currentEggs + " for " + userName)
     let totalEggsToAdd = currentEggs + eggsToAdd
-    console.log("New Eggs: " + totalEggsToAdd + " for " + userName)
     await dbAddEggs(`UPDATE users SET eggs_amount=? WHERE user_name = ?`, [totalEggsToAdd, userName]);
-    console.log("Check Eggs Database: " + userName + " has " + await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
   }
 }
 
