@@ -189,9 +189,9 @@ async function addEggsToUser(eggsToAdd, userName, channel) {
 }
 
 async function changeColourEvent(eventUserContent, viewer, channel) {
-  var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
-  var regex = /[0-9A-Fa-f]{6}/g;
-  var findHexInDB = await dbGetHex(colourString)
+  let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
+  let regex = /[0-9A-Fa-f]{6}/g;
+  let findHexInDB = await dbGetHex(colourString)
   if (colourString.match(regex)){
     await changeColour(colourString)
     let colourName = (await dbGetColourByHex(colourString)).colour_name;
@@ -225,12 +225,12 @@ async function changeColour(colour) {
   }
   
   const hexToDecimal = hex => parseInt(hex, 16); 
-  var arrayOfHex = colour.match(/.{1,2}/g)
-  var obsHexOrder = arrayOfHex.reverse().join("")
-  var finalHex = "ff" + obsHexOrder
+  let arrayOfHex = colour.match(/.{1,2}/g)
+  let obsHexOrder = arrayOfHex.reverse().join("")
+  let finalHex = "ff" + obsHexOrder
   const obsDecimalColour = hexToDecimal(finalHex);
 
-  var myObject = {
+  let myObject = {
     color: obsDecimalColour
   }
   
@@ -325,8 +325,6 @@ async function isSub(subName){
   }
 }
 
-// setInterval(isStreamLive(), 900000);
-
 setInterval(async function() {await isStreamLive("maddeth")}, 900000);
 
 async function isStreamLive(userName) {
@@ -368,7 +366,7 @@ app.get("/colours", async (req, res, next) => {
 // TODO: rewrite this
 
 app.post("/colours/", (req, res, next) => {
-  var reqBody = re.body;
+  let reqBody = re.body;
   booziedb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
       [reqBody.colour_name, reqBody.hex_code],
       function (err, result) {
@@ -383,7 +381,7 @@ app.post("/colours/", (req, res, next) => {
 });
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
-  var createWebHookParams = {
+  let createWebHookParams = {
     host: "api.twitch.tv",
     path: "helix/eventsub/subscriptions",
     method: 'POST',
@@ -394,7 +392,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
     }
   }
 
-  var createWebHookBody = {
+  let createWebHookBody = {
     "type": "channel.channel_points_custom_reward_redemption.add",
     "version": "1",
     "condition": {
@@ -407,14 +405,14 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
     }
   }
 
-  var responseData = ""
-  var webhookReq = https.request(createWebHookParams, (result) => {
+  let responseData = ""
+  let webhookReq = https.request(createWebHookParams, (result) => {
     result.setEncoding('utf8')
     result.on('data', function(d) {
       responseData = responseData + d
     })
     .on('end', function(result) {
-      var responseBody = JSON.parse(responseData)
+      let responseBody = JSON.parse(responseData)
       res.send(responseBody)
     })
   })
