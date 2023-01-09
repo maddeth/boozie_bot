@@ -55,15 +55,18 @@ try {
 // database models definiton
 
 const colour = booziedb.define('colour', {
-  hex_code: {
-    type: DataTypes.STRING,
-    allowNull: false
+    hex_code: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    colour_name: {
+      type: DataTypes.STRING,
+      allowNull: false
+    }
   },
-  colour_name: {
-    type: DataTypes.STRING,
-    allowNull: false
+  {
+    timestamps: false
   }
-}
 );
 
 const user = booziedb.define('user', {
