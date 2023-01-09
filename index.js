@@ -6,8 +6,11 @@ import https from 'https';
 import OBSWebSocket from 'obs-websocket-js';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
-import sqlite3 from 'sqlite3';
+import { Sequelize, DataTypes } from 'sequelize';
 import { ApiClient } from '@twurple/api';
+import { exit } from 'process';
+
+// config
 
 const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
 const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
@@ -21,8 +24,219 @@ const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 const port = 3000;
 
+// isBotMod?
+
+function isBotMod(modName){
+  return modlist.includes(modName);
+}
+
+// obs websocket
+
 const obs = new OBSWebSocket();
+
+// app definiton
 const app = express();
+
+// sqlite database
+
+const booziedb = new Sequelize('database', 'username', 'password', {
+  dialect: 'sqlite',
+  storage: 'C:\\temp\\MaddBot\\boozie_db.db',
+});
+
+try {
+  await booziedb.authenticate();
+  console.log('Connection has been established successfully.');
+} catch (error) {
+  console.error('Unable to connect to the database:', error);
+  exit();
+}
+
+// database models definiton
+
+const colour = booziedb.define('colour', {
+  hex_code: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  colour_name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+}
+);
+
+const user = booziedb.define('user', {
+  user_name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  eggs_amount: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  }
+},
+{
+  timestamps: false
+}
+);
+
+// DB Query functions
+
+async function dbGetAllColours() {
+return colour.findAll();
+}
+
+async function dbGetHex(event) {
+return colour.findOne({
+  attributes: ['hex_code'],
+  where: booziedb.where(
+    booziedb.fn('replace', booziedb.col('colour_name'), ' ', ''),
+    event.toLowerCase().replace(/ /g,"")
+  )
+});
+}
+
+async function dbGetColourByHex(hexCode) {
+return (await colour.findAll({
+  attributes: ['colour_name'],
+  where: booziedb.where(
+    booziedb.fn('replace', booziedb.col('hex_code'), ' ', ''), 
+    hexCode.toLowerCase().replace(/ /g,"")
+  )
+})).map(c => c.colour_name).join(", ");
+}
+
+async function dbGetColour(id) {
+return colour.findOne({
+  attributes: ['colour_name', 'hex_code'],
+  where: { 
+    colour_id: id
+  }
+});
+}
+
+// TODO: rewrite this
+
+async function dbAddColour(query, values) {
+return new Promise(function(resolve,reject){
+  booziedb.run(query, values, function(err,result){
+    if(err){return reject(err);}
+    resolve(result);
+  });
+});
+}
+
+async function dbGetEggs(userName) {
+return user.findOne({
+  where: {
+    user_name: userName
+  }
+});
+}
+
+async function dbAddEggs(userName, eggs) {
+return await user.update(
+  {
+    eggs_amount: eggs
+  },
+  {
+    where: { user_name: userName },
+  }
+);
+}
+
+async function dbNewUserEggs(userName, eggs) {
+await user.create(
+  {
+    user_name: userName,
+    eggs_amount: eggs
+  }
+)
+}
+
+async function addEggs(userName, eggs) {
+let dbUser = await dbGetEggs(userName);
+if (dbUser != null)
+{
+  dbAddEggs(userName , (dbUser.eggs_amount + eggs))
+}
+else
+{
+  dbNewUserEggs(userName, eggs)
+}
+}
+
+// chat commands
+
+async function addEggsToUser(eggsToAdd, userName, channel) {
+  addEggs(userName, eggsToAdd);
+
+  if(typeof channel !== 'undefined'){
+    const userEggs = (await dbGetEggs(userName)).eggs_amount;
+    if(eggsToAdd === 1){ //because someone will complain otherwise
+      chatClient.say(channel, "added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd > 2) {
+      chatClient.say(channel, "added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd === -1){ //because someone complained
+      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
+    } else if(eggsToAdd < 0){
+      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
+    } else {
+      chatClient.say(channel, "Why?")
+    }
+  }
+}
+
+async function changeColourEvent(eventUserContent, viewer, channel) {
+  var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
+  var regex = /[0-9A-Fa-f]{6}/g;
+  var findHexInDB = await dbGetHex(colourString)
+  if (colourString.match(regex)){
+    await changeColour(colourString)
+    let colourName = (await dbGetColourByHex(colourString)).colour_name;
+    if (colourName) {
+      chatClient.say(channel, "According to my list, that colour is " + colourName);
+    }
+    chatClient.say(channel, "!addeggs " + viewer + " 4");
+  } else if (findHexInDB !== undefined) {
+      chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
+      chatClient.say(channel, "!addeggs " + viewer + " 4");
+      await changeColour(findHexInDB)
+  } else {
+      const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
+      let randoColour = (await dbGetColourByHex(randomString)).colour_name;
+      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+      await changeColour(randomString)
+  }
+}
+
+async function changeColour(colour) {
+  try {
+    const {
+      obsWebSocketVersion,
+      negotiatedRpcVersion
+    } = await obs.connect(obsIP, obsPassword, {
+      rpcVersion: 1
+    });
+    console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
+  } catch (error) {
+    console.error('Failed to connect', error.code, error.message);
+  }
+  
+  const hexToDecimal = hex => parseInt(hex, 16); 
+  var arrayOfHex = colour.match(/.{1,2}/g)
+  var obsHexOrder = arrayOfHex.reverse().join("")
+  var finalHex = "ff" + obsHexOrder
+  const obsDecimalColour = hexToDecimal(finalHex);
+
+  var myObject = {
+    color: obsDecimalColour
+  }
+  
+  await obs.call('SetSourceFilterSettings',{sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject});
+  await obs.disconnect();
+}
 
 // Chat IRC Client:
 const authProvider = new RefreshingAuthProvider(
@@ -48,7 +262,7 @@ chatClient.onMessage(async (channel, user, message) => {
     chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
   }
   if(lowerCaseMessage.startsWith("!seteggs")){
-    let isAMod = botMod(user)
+    let isAMod = isBotMod(user);
     const setEggs = lowerCaseMessage.split(" ");
     const eggNumber = parseInt(Number(setEggs[2]))
     const eggUser = setEggs[1]
@@ -77,14 +291,6 @@ chatClient.onMessage(async (channel, user, message) => {
     }
   } 
 });
-
-function botMod(modName){
-  if(modlist.includes(modName)){
-    return true;
-  } else {
-    return false;
-  }
-}
 
 //Chat API
 const api = new ApiClient({authProvider});
@@ -133,6 +339,7 @@ async function isStreamLive(userName) {
 }
 
 // Express App
+
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
     req.rawBody = buf
@@ -148,16 +355,17 @@ app.get('/', (req, res) => {
 });
 
 app.get("/colours/:id", async (req, res, next) => {
-  var params = [req.params.id]
-  let result = await dbGetColour("SELECT hex_code, colour_name FROM colours WHERE colour_id = ?", params)
-  res.status(200).json(result);
+  let result = await dbGetColour(req.params.id)
+  res.status(200).json(json.stringify(result));
 });
 
 
 app.get("/colours", async (req, res, next) => {
-  let result = await dbGetAllColours("SELECT hex_code, colour_name FROM colours")
-  res.status(200).json(result)
+  let result = await dbGetAllColours()
+  res.status(200).json(JSON.stringify(result))
 });
+
+// TODO: rewrite this
 
 app.post("/colours/", (req, res, next) => {
   var reqBody = re.body;
@@ -269,178 +477,4 @@ async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
   } else if (eventTitle === 'Sound Alert: Shadow colour') {
     changeColourEvent(eventUserContent, viewer, channel)
   }
-}
-
-async function changeColourEvent(eventUserContent, viewer, channel) {
-  var colourString = eventUserContent.replace(/#/g, '').toLowerCase()
-  var regex = /[0-9A-Fa-f]{6}/g;
-  var findHexInDB = await getHex(colourString)
-  if (colourString.match(regex)){
-    await changeColour(colourString)
-    let colourName = await getColourName(colourString);
-    if (colourName.length >= 1) {
-      chatClient.say(channel, "According to my list, that colour is: '" + colourName.join("', '") + "'.");
-    }
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
-  } else if (findHexInDB !== undefined) {
-      chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
-      chatClient.say(channel, "!addeggs " + viewer + " 4");
-      await changeColour(findHexInDB)
-  } else {
-      const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-      let randoColour = await getColourName(randomString);
-      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour .length >= 1 ? "'" + randoColour.join("', '") + "'." : "'" + randomString + "'."));
-      await changeColour(randomString)
-  }
-}
-
-async function changeColour(colour) {
-  try {
-    const {
-      obsWebSocketVersion,
-      negotiatedRpcVersion
-    } = await obs.connect(obsIP, obsPassword, {
-      rpcVersion: 1
-    });
-    console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
-  } catch (error) {
-    console.error('Failed to connect', error.code, error.message);
-  }
-  
-  const hexToDecimal = hex => parseInt(hex, 16); 
-  var arrayOfHex = colour.match(/.{1,2}/g)
-  var obsHexOrder = arrayOfHex.reverse().join("")
-  var finalHex = "ff" + obsHexOrder
-  const obsDecimalColour = hexToDecimal(finalHex);
-
-  var myObject = {
-    color: obsDecimalColour
-  }
-  
-  await obs.call('SetSourceFilterSettings',{sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject});
-  await obs.disconnect();
-}
-
-//Colour Database
-const booziedb = new sqlite3.Database('/home/sqlitedb/boozie_db.db', (err) => {
-  if (err) {
-    console.error("Error opening database " + err.message);
-  } 
-});
-
-async function dbGetColourByHex(query, id){
-  return new Promise((resolve,reject) => {
-    const queries = [];
-    booziedb.each(query, id, function(err,result){
-      if(err){reject(err);}
-      queries.push(result.colour_name);
-    }, (err, n) => {
-      if (err) {reject(err);} else {
-        resolve(queries);
-      }
-    });
-  });
-}
-
-async function dbGetColour(query, id){
-  return new Promise(function(resolve,reject){
-    booziedb.each(query, id, function(err,result){
-      if(err){return reject(err);}
-      resolve(result.colour_name + ": " + result.hex_code);
-    });
-  });
-}
-
-async function dbGetAllColours(query){
-  return new Promise(function(resolve,reject){
-    booziedb.all(query, function(err,result){
-      if(err){return reject(err);}
-      resolve(result);
-    });
-  });
-}
-
-async function dbGetHex(query, colour){
-  return new Promise((resolve,reject) => {
-    const queries = [];
-    booziedb.each(query, colour, function(err,result){
-      if(err){reject(err);}
-      queries.push(result.hex_code);
-    }, (err, n) => {
-      if (err) {reject(err);} else {
-        resolve(queries[0]);
-      }
-    });
-  });
-}
-
-async function dbAddColour(query, values){
-  return new Promise(function(resolve,reject){
-    booziedb.run(query, values, function(err,result){
-      if(err){return reject(err);}
-      resolve(result);
-    });
-  });
-}
-
-async function getHex(event) {
-  let query = "SELECT hex_code FROM colours WHERE replace(colour_name, ' ', '') = ?"
-  let colourLookup = event.toLowerCase().replace(/ /g,"")
-  let value = await dbGetHex(query, colourLookup)
-  console.log("Got Hex value: " + value);
-  return value;
-}
-
-async function getColourName(event) {
-  let query = "SELECT colour_name FROM colours WHERE hex_code = ?"
-  let colourLookup = event.toLowerCase().replace(/ /g,"")
-  let value = await dbGetColourByHex(query, colourLookup)
-  console.log("Got colour value: " + value);
-  return value;
-}
-
-//Eggs DB
-async function addEggsToUser(eggsToAdd, userName, channel) {
-  let checkUserExists = await getEggs(`SELECT EXISTS(SELECT 1 FROM users WHERE user_name = ?) AS eggs_amount`, userName)
-  if(checkUserExists === 0){
-    console.log("User doesn't exist, create")
-    await dbAddEggs(`INSERT OR IGNORE INTO users (eggs_amount, user_name) VALUES (?,?)`, [eggsToAdd, userName])
-  } else {
-    let currentEggs = Number(await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName))
-    let totalEggsToAdd = currentEggs + eggsToAdd
-    await dbAddEggs(`UPDATE users SET eggs_amount=? WHERE user_name = ?`, [totalEggsToAdd, userName]);
-  }
-
-  if(typeof channel !== 'undefined'){
-    const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, userName);
-    if(eggsToAdd === 1){ //because someone will complain otherwise
-      chatClient.say(channel, "added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
-    } else if(eggsToAdd > 2) {
-      chatClient.say(channel, "added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
-    } else if(eggsToAdd === -1){ //because someone complained
-      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
-    } else if(eggsToAdd < 0){
-      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
-    } else {
-      chatClient.say(channel, "Why?")
-    }
-  }
-}
-
-async function getEggs(query, user){
-  return new Promise(function(resolve,reject){
-    booziedb.each(query, user, function(err,result){
-      if(err){return reject(err);}
-      resolve(result.eggs_amount);
-    });
-  });
-}
-
-async function dbAddEggs(query, values){
-  return new Promise(function(resolve,reject){
-    booziedb.run(query, values, function(err,result){
-      if(err){return reject(err);}
-      resolve(result);
-    });
-  });
 }
