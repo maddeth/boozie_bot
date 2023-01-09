@@ -64,6 +64,18 @@ chatClient.onMessage(async (channel, user, message) => {
       chatClient.say(channel,"Looks like you are not a bot mod " + user + "... fuck off");
     }
   }
+  if(lowerCaseMessage.startsWith("!geteggs")){
+    const getEggsArray = lowerCaseMessage.split(" ");
+    const diffUser = getEggsArray[1];
+    console.log(diffUser)
+    if(typeof diffUser !== 'undefined'){
+      const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, diffUser);
+      chatClient.say(channel, diffUser + " has " + userEggs + " eggs")
+    } else {
+      const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, user);
+      chatClient.say(channel, user + " has " + userEggs + " eggs")
+    }
+  } 
 });
 
 function botMod(modName){
@@ -266,8 +278,8 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   if (colourString.match(regex)){
     await changeColour(colourString)
     let colourName = await getColourName(colourString);
-    if (colourName) {
-      chatClient.say(channel, "According to my list, that colour is " + colourName);
+    if (colourName.length >= 1) {
+      chatClient.say(channel, "According to my list, that colour is: '" + colourName.join("', '") + "'.");
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
   } else if (findHexInDB !== undefined) {
@@ -277,7 +289,7 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   } else {
       const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
       let randoColour = await getColourName(randomString);
-      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour .length >= 1 ? "'" + randoColour.join("', '") + "'." : "'" + randomString + "'."));
       await changeColour(randomString)
   }
 }
@@ -324,7 +336,7 @@ async function dbGetColourByHex(query, id){
       queries.push(result.colour_name);
     }, (err, n) => {
       if (err) {reject(err);} else {
-        resolve(queries[0]);
+        resolve(queries);
       }
     });
   });
