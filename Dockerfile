@@ -1,4 +1,4 @@
-FROM node:14.17.5-alpine3.14
+FROM node:16.19.0-alpine3.16
 
 RUN mkdir -p /home/node/bot/node_modules && chown -R node:node /home/node/bot
 

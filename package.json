@@ -10,7 +10,7 @@
     "sqlite3": "^5.1.4"
   },
   "description": "bot for twitch",
-  "main": "bot.js",
+  "main": "index.js",
   "directories": {
     "test": "test"
   },
