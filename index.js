@@ -287,10 +287,10 @@ chatClient.onMessage(async (channel, user, message) => {
     const diffUser = getEggsArray[1];
     console.log(diffUser)
     if(typeof diffUser !== 'undefined'){
-      const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, diffUser);
+      const userEggs = (await dbGetEggs(diffUser)).eggs_amount
       chatClient.say(channel, diffUser + " has " + userEggs + " eggs")
     } else {
-      const userEggs = await getEggs(`SELECT eggs_amount FROM users WHERE user_name = ?`, user);
+      const userEggs = (await dbGetEggs(user)).eggs_amount
       chatClient.say(channel, user + " has " + userEggs + " eggs")
     }
   } 
