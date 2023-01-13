@@ -22,6 +22,7 @@ const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
+const databaseLocation = JSON.parse(await fs.readFile('./config.json', 'utf-8')).DatabaseFile;
 const port = 3000;
 
 // isBotMod?
@@ -41,7 +42,7 @@ const app = express();
 
 const booziedb = new Sequelize('database', 'username', 'password', {
   dialect: 'sqlite',
-  storage: 'C:\\temp\\MaddBot\\boozie_db.db',
+  storage: databaseLocation,
 });
 
 try {
