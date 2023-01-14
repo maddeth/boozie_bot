@@ -153,8 +153,7 @@ async function addEggs(userName, eggs) {
 // chat commands
 
 async function addEggsToUser(eggsToAdd, userName, channel) {
-  addEggs(userName, eggsToAdd);
-
+  await addEggs(userName, eggsToAdd);
   if(typeof channel !== 'undefined'){
     const userEggs = (await dbGetEggs(userName)).eggs_amount;
     if(eggsToAdd === 1){ //because someone will complain otherwise
@@ -183,7 +182,6 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
   } else if (findHexInDB != null) {
-      console.log("findHexInDB is:", findHexInDB)
       chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
       chatClient.say(channel, "!addeggs " + viewer + " 4");
       await changeColour(findHexInDB)
@@ -265,7 +263,6 @@ chatClient.onMessage(async (channel, user, message) => {
   if(lowerCaseMessage.startsWith("!geteggs")){
     const getEggsArray = lowerCaseMessage.split(" ");
     const diffUser = getEggsArray[1];
-    console.log(diffUser)
     if(typeof diffUser !== 'undefined'){
       const userEggs = (await dbGetEggs(diffUser)).eggs_amount
       chatClient.say(channel, diffUser + " has " + userEggs + " eggs")
@@ -283,7 +280,6 @@ async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(async user => {
     const check = await isSub(user.userDisplayName);
-    console.log(check)
     addEggsToUser(check, user.userDisplayName)
   });
 }
@@ -426,7 +422,6 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
 
 function readTwitchEventSub(subBody, res) {
   if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
-    console.log(subBody.body.challenge)
     subBody.send(subBody.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
   } else {
     processEventSub(subBody, res)
