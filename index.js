@@ -44,15 +44,14 @@ const booziedb = new Sequelize({
 
 // database models definiton
 const colour = booziedb.define('colour', {
-    hex_code: {
-      type: DataTypes.STRING,
-      allowNull: false
-    },
-    colour_name: {
-      type: DataTypes.STRING,
-      allowNull: false
-    }
+  hex_code: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
+  colour_name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }},
   {
     timestamps: false
   }
@@ -85,7 +84,7 @@ async function dbGetHex(event) {
       booziedb.fn('replace', booziedb.col('colour_name'), ' ', ''),
       event.toLowerCase().replace(/ /g,"")
     )});
-  return hex.dataValues.hex_code
+  return hex ? hex.dataValues.hex_code : null
 }
 
 async function dbGetColourByHex(hexCode) {
@@ -96,7 +95,7 @@ async function dbGetColourByHex(hexCode) {
     }
   });
   let coloursMap = colours.map(colour => colour.dataValues.colour_name).join("\", \"");
-  return "\"" + coloursMap + "\""
+  return coloursMap ? "\"" + coloursMap + "\"" : false
 }
 
 async function dbGetColour(id) {
@@ -176,7 +175,6 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
-  console.log("get stuff: " + await findHexInDB)
   if (colourString.match(regex)){
     await changeColour(colourString)
     let colourName = (await dbGetColourByHex(colourString));
@@ -184,14 +182,15 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
-  } else if (findHexInDB !== undefined || findHexInDB !== null || findHexInDB !== "null") {
+  } else if (findHexInDB != null) {
+      console.log("findHexInDB is:", findHexInDB)
       chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
       chatClient.say(channel, "!addeggs " + viewer + " 4");
       await changeColour(findHexInDB)
   } else {
       const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-      let randoColour = (await dbGetColourByHex(randomString)).colour_name;
-      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? randoColour : randomString));
+      let randoColour = await dbGetColourByHex(randomString);
+      chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString));
       await changeColour(randomString)
   }
 }
