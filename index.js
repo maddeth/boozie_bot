@@ -22,16 +22,12 @@ const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
-const databaseLocation = JSON.parse(await fs.readFile('./config.json', 'utf-8')).DatabaseFile;
+const databaseLocation = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).DatabaseFile;
 const port = 3000;
-
-// isBotMod?
 
 function isBotMod(modName){
   return modlist.includes(modName);
 }
-
-// obs websocket
 
 const obs = new OBSWebSocket();
 
@@ -40,21 +36,13 @@ const app = express();
 
 // sqlite database
 
-const booziedb = new Sequelize('database', 'username', 'password', {
+const booziedb = new Sequelize({
   dialect: 'sqlite',
   storage: databaseLocation,
+  logging: false
 });
 
-try {
-  await booziedb.authenticate();
-  console.log('Connection has been established successfully.');
-} catch (error) {
-  console.error('Unable to connect to the database:', error);
-  exit();
-}
-
 // database models definiton
-
 const colour = booziedb.define('colour', {
     hex_code: {
       type: DataTypes.STRING,
@@ -81,94 +69,86 @@ const user = booziedb.define('user', {
   }
 },
 {
-  timestamps: false
-}
-);
+    timestamps: false
+});
 
 // DB Query functions
 
 async function dbGetAllColours() {
-return colour.findAll();
+  return colour.findAll();
 }
 
 async function dbGetHex(event) {
-return colour.findOne({
-  attributes: ['hex_code'],
-  where: booziedb.where(
-    booziedb.fn('replace', booziedb.col('colour_name'), ' ', ''),
-    event.toLowerCase().replace(/ /g,"")
-  )
-});
+  let hex = await colour.findOne({
+    attributes: ['hex_code'],
+    where: booziedb.where(
+      booziedb.fn('replace', booziedb.col('colour_name'), ' ', ''),
+      event.toLowerCase().replace(/ /g,"")
+    )});
+  return hex.dataValues.hex_code
 }
 
 async function dbGetColourByHex(hexCode) {
-return (await colour.findAll({
-  attributes: ['colour_name'],
-  where: booziedb.where(
-    booziedb.fn('replace', booziedb.col('hex_code'), ' ', ''), 
-    hexCode.toLowerCase().replace(/ /g,"")
-  )
-})).map(c => c.colour_name).join(", ");
+  let colours = await colour.findAll({
+    attributes: ['colour_name'],
+    where: {
+      hex_code: hexCode
+    }
+  });
+  let coloursMap = colours.map(colour => colour.dataValues.colour_name).join("\", \"");
+  return "\"" + coloursMap + "\""
 }
 
 async function dbGetColour(id) {
-return colour.findOne({
-  attributes: ['colour_name', 'hex_code'],
-  where: { 
-    colour_id: id
-  }
-});
+  return colour.findOne({
+    attributes: ['colour_name', 'hex_code'],
+    where: { 
+      id: id
+    }
+  });
 }
 
 // TODO: rewrite this
-
 async function dbAddColour(query, values) {
-return new Promise(function(resolve,reject){
-  booziedb.run(query, values, function(err,result){
-    if(err){return reject(err);}
-    resolve(result);
+  return new Promise(function(resolve,reject){
+    booziedb.run(query, values, function(err,result){
+      if(err){return reject(err);}
+      resolve(result);
+    });
   });
-});
 }
 
 async function dbGetEggs(userName) {
-return user.findOne({
-  where: {
-    user_name: userName
-  }
-});
+  return user.findOne({
+    where: {
+      user_name: userName
+    }
+  });
 }
 
 async function dbAddEggs(userName, eggs) {
-return await user.update(
-  {
+  return await user.update({
     eggs_amount: eggs
   },
   {
     where: { user_name: userName },
-  }
-);
+  });
 }
 
 async function dbNewUserEggs(userName, eggs) {
-await user.create(
-  {
+  await user.create({
     user_name: userName,
     eggs_amount: eggs
-  }
-)
+  })
 }
 
 async function addEggs(userName, eggs) {
-let dbUser = await dbGetEggs(userName);
-if (dbUser != null)
-{
-  dbAddEggs(userName , (dbUser.eggs_amount + eggs))
-}
-else
-{
-  dbNewUserEggs(userName, eggs)
-}
+  let dbUser = await dbGetEggs(userName);
+  if (dbUser != null){
+    dbAddEggs(userName , (dbUser.eggs_amount + eggs))
+  } else {
+    dbNewUserEggs(userName, eggs)
+  }
 }
 
 // chat commands
@@ -196,14 +176,15 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
+  console.log("get stuff: " + await findHexInDB)
   if (colourString.match(regex)){
     await changeColour(colourString)
-    let colourName = (await dbGetColourByHex(colourString)).colour_name;
+    let colourName = (await dbGetColourByHex(colourString));
     if (colourName) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
-  } else if (findHexInDB !== undefined) {
+  } else if (findHexInDB !== undefined || findHexInDB !== null || findHexInDB !== "null") {
       chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
       chatClient.say(channel, "!addeggs " + viewer + " 4");
       await changeColour(findHexInDB)
@@ -358,17 +339,16 @@ app.get('/', (req, res) => {
 
 app.get("/colours/:id", async (req, res, next) => {
   let result = await dbGetColour(req.params.id)
-  res.status(200).json(json.stringify(result));
+  res.status(200).json(result);
 });
 
 
 app.get("/colours", async (req, res, next) => {
   let result = await dbGetAllColours()
-  res.status(200).json(JSON.stringify(result))
+  res.status(200).json(result)
 });
 
 // TODO: rewrite this
-
 app.post("/colours/", (req, res, next) => {
   let reqBody = re.body;
   booziedb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
