@@ -8,9 +8,6 @@ import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
 import { Sequelize, DataTypes } from 'sequelize';
 import { ApiClient } from '@twurple/api';
-import { exit } from 'process';
-
-// config
 
 const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
 const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
@@ -30,11 +27,7 @@ function isBotMod(modName){
 }
 
 const obs = new OBSWebSocket();
-
-// app definiton
 const app = express();
-
-// sqlite database
 
 const booziedb = new Sequelize({
   dialect: 'sqlite',
@@ -42,7 +35,6 @@ const booziedb = new Sequelize({
   logging: false
 });
 
-// database models definiton
 const colour = booziedb.define('colour', {
   hex_code: {
     type: DataTypes.STRING,
@@ -51,11 +43,11 @@ const colour = booziedb.define('colour', {
   colour_name: {
     type: DataTypes.STRING,
     allowNull: false
-  }},
-  {
-    timestamps: false
   }
-);
+},
+{
+  timestamps: false
+});
 
 const user = booziedb.define('user', {
   user_name: {
@@ -69,6 +61,33 @@ const user = booziedb.define('user', {
 },
 {
     timestamps: false
+});
+
+const quotes = booziedb.define('quotes', {
+  quote: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+});
+
+const commands = booziedb.define('commands', {
+  id: {
+    allowNull: false,
+    autoIncrement: true,
+    primaryKey: true,
+    type: DataTypes.INTEGER
+  },
+  command: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  response: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+},
+{
+  timestamps: false
 });
 
 // DB Query functions
@@ -150,8 +169,6 @@ async function addEggs(userName, eggs) {
   }
 }
 
-// chat commands
-
 async function addEggsToUser(eggsToAdd, userName, channel) {
   await addEggs(userName, eggsToAdd);
   if(typeof channel !== 'undefined'){
@@ -221,14 +238,11 @@ async function changeColour(colour) {
 }
 
 // Chat IRC Client:
-const authProvider = new RefreshingAuthProvider(
-  {
+const authProvider = new RefreshingAuthProvider({
     clientId,
     clientSecret,
     onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
-  },
-  tokenData
-);
+}, tokenData);
 
 const chatClient = new ChatClient({ authProvider, channels: ['maddeth'] });
 
@@ -270,10 +284,116 @@ chatClient.onMessage(async (channel, user, message) => {
       const userEggs = (await dbGetEggs(user)).eggs_amount
       chatClient.say(channel, user + " has " + userEggs + " eggs")
     }
-  } 
+  }
+  if(lowerCaseMessage.startsWith("!addcommand")){
+    let isAMod = isBotMod(user);
+    if(isAMod){
+      const commandToAddArray = lowerCaseMessage.split(" ");
+      const commandName = commandToAddArray[1];
+
+      let commandToAdd = []
+      for (let i = 2; i < commandToAddArray.length; i++) {
+        commandToAdd += commandToAddArray[i] + " "
+      }
+      if(commandToAddArray.length <= 1){
+        chatClient.say(channel, "Command does not have enough arguements")
+      } else {
+        try {
+          let response = await addCommand(commandName, commandToAdd)
+          chatClient.say(channel, "Command " + response + " added")
+        } catch {
+          console.log("Command failed to add")
+        }
+      }
+    }
+  }
+  if(lowerCaseMessage.startsWith("!updatecommand")){
+    let isAMod = isBotMod(user);
+    if(isAMod){
+      const commandToUpdateArray = lowerCaseMessage.split(" ");
+      const commandName = commandToUpdateArray[1];
+
+      let commandToUpdate = []
+      for (let i = 2; i < commandToUpdateArray.length; i++) {
+        commandToUpdate += commandToUpdateArray[i] + " "
+      }
+      if(commandToUpdateArray.length <= 1){
+        chatClient.say(channel, "Command does not have enough arguements")
+      } else {
+        try {
+          await updateCommand(commandName, commandToUpdate)
+          chatClient.say(channel, "Command " + commandName + " updated")
+        } catch {
+          console.log("Command failed to update")
+        }
+      }
+    }
+  }
+  if(lowerCaseMessage.startsWith("!removecommand")){
+    let isAMod = isBotMod(user);
+    if(isAMod){
+      const commandToRemoveArray = lowerCaseMessage.split(" ");
+      const commandName = commandToRemoveArray[1];
+
+      if(commandToRemoveArray.length <= 1){
+        chatClient.say(channel, "Command does not have enough arguements")
+      } else {
+        try {
+          await removeCommand(commandName)
+          chatClient.say(channel, "Command " + commandName + " deleted")
+        } catch {
+          console.log("Command failed to update")
+        }
+      }
+    }
+  }
+  if(lowerCaseMessage.startsWith("!")){
+    const commandArray = lowerCaseMessage.split(" ");
+    const command = commandArray[0];
+    let response = await getCommand(command)
+    if(response){
+      chatClient.say(channel, response)
+    }
+  }
 });
 
-//Chat API
+async function addCommand(command, commandRequest) {
+  let added = await commands.create({
+    command: command,
+    response: commandRequest
+  })
+  return added ? added.dataValues.command : false
+}
+
+async function updateCommand(command, commandRequest) {
+  await commands.update({
+    response: commandRequest
+  },
+  {
+    where: { command: command },
+  });
+}
+
+async function removeCommand(command) {
+  const row = await commands.findOne({
+    where: { command: command },
+  });
+  if (row) {
+    await row.destroy();
+  }
+}
+
+
+async function getCommand(commandRequest){
+  let commandResponse = await commands.findOne({
+    attributes: ['response'],
+    where: {
+      command: commandRequest
+    }
+  });
+  return commandResponse ? commandResponse.dataValues.response : false
+}
+
 const api = new ApiClient({authProvider});
 
 async function getUser() {
