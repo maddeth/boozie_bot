@@ -551,7 +551,7 @@ function readTwitchEventSub(subBody, res) {
 function processEventSub(event, res) {
   if (event.header("Twitch-Eventsub-Message-Type") === "notification") {
     let newEvent = event.body.event.reward.title
-    let userInput = event.body.event.user_input
+    let userInput = String(event.body.event.user_input)
     let viewerName = event.body.event.user_name
     let channel = event.body.event.broadcaster_user_login
 
