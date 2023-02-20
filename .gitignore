@@ -3,3 +3,5 @@ tokens.json
 tokens_me.json
 modList.json
 .env
+node_modules/
+package-lock.json
