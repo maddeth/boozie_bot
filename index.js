@@ -8,6 +8,8 @@ import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
 import { Sequelize, DataTypes } from 'sequelize';
 import { ApiClient } from '@twurple/api';
+import { notStrictEqual } from 'assert';
+import { odata, TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
 
 const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
 const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
@@ -20,7 +22,14 @@ const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 const databaseLocation = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).DatabaseFile;
+const account = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccount;
+const accountKey = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccountKey;
 const port = 3000;
+
+const azureTableEndpoint = "https://" + account + ".table.core.windows.net/";
+const azureTableCredential = new AzureNamedKeyCredential(account, accountKey);
+const colourTableName = "colours";
+const colourTableClient = new TableClient(azureTableEndpoint, colourTableName, azureTableCredential);
 
 function isBotMod(modName){
   return modlist.includes(modName);
@@ -93,37 +102,41 @@ const commands = booziedb.define('commands', {
 // DB Query functions
 
 async function dbGetAllColours() {
-  return colour.findAll();
+  let colourMap = new Map()
+  let entities = colourTableClient.listEntities();
+  for await (const entity of entities) {
+    colourMap.set(entity.colourName, entity.hexCode)
+  }
+  return JSON.stringify(Object.fromEntries(colourMap))
 }
 
 async function dbGetHex(event) {
-  let hex = await colour.findOne({
-    attributes: ['hex_code'],
-    where: booziedb.where(
-      booziedb.fn('replace', booziedb.col('colour_name'), ' ', ''),
-      event.toLowerCase().replace(/ /g,"")
-    )});
-  return hex ? hex.dataValues.hex_code : null
+  let entities = colourTableClient.listEntities({
+    queryOptions: { filter: odata`colourNameSanitised eq ${event.replace(/\s/g, '').toLowerCase()}` }
+  });
+
+  for await (const entity of entities) {
+    console.log(`${entity.hexCode}`);
+    return entity.hexCode
+  }
 }
 
 async function dbGetColourByHex(hexCode) {
-  let colours = await colour.findAll({
-    attributes: ['colour_name'],
-    where: {
-      hex_code: hexCode
-    }
+  let entities = colourTableClient.listEntities({
+    queryOptions: { filter: odata`hexCode eq ${hexCode.replace(/#/g, '').toLowerCase()}` }
   });
-  let coloursMap = colours.map(colour => colour.dataValues.colour_name).join("\", \"");
-  return coloursMap ? "\"" + coloursMap + "\"" : false
+  let colourList = []
+  
+  for await (const entity of entities) {
+    colourList.push(entity.colourName)
+  }
+  console.log(`${"\"" + colourList.join("\", \"") + "\""}`);
+  return colourList ? "\"" + colourList.join("\", \"") + "\"" : false
 }
 
 async function dbGetColour(id) {
-  return colour.findOne({
-    attributes: ['colour_name', 'hex_code'],
-    where: { 
-      id: id
-    }
-  });
+  let entity = await colourTableClient.getEntity("colour", id);
+  return "\"" + entity.colourName + "\":\"" + entity.hexCode + "\""
 }
 
 // TODO: rewrite this
@@ -192,8 +205,8 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
   if (colourString.match(regex)){
-    await changeColour(colourString)
     let colourName = (await dbGetColourByHex(colourString));
+    await changeColour(colourString)
     if (colourName) {
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
@@ -347,6 +360,18 @@ chatClient.onMessage(async (channel, user, message) => {
       }
     }
   }
+  // if(lowerCaseMessage.startsWith("!quote")){
+  //   const quoteCommand = lowerCaseMessage.split(" ");
+  //   const commandType = quoteCommand[1];
+  //   let isAMod = isBotMod(user);    
+  //   if(isAMod){
+  //     if(commandToRemoveArray.length <= 2){
+  //       chatClient.say(channel, "Command does not have enough arguements")
+  //     } else {
+
+  //     }
+  //   }
+  // }
   if(lowerCaseMessage.startsWith("!")){
     const commandArray = lowerCaseMessage.split(" ");
     const command = commandArray[0];
@@ -460,7 +485,7 @@ app.get("/colours/:id", async (req, res, next) => {
 
 app.get("/colours", async (req, res, next) => {
   let result = await dbGetAllColours()
-  res.status(200).json(result)
+  res.status(200).json(JSON.parse(result))
 });
 
 // TODO: rewrite this

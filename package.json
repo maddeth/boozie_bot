@@ -8,7 +8,8 @@
     "express": "^4.18.2",
     "obs-websocket-js": "^5.0.2",
     "sequelize": "^6.28.0",
-    "sqlite3": "^5.1.4"
+    "sqlite3": "^5.1.4",
+    "@azure/data-tables":"^13.2.1"
   },
   "description": "bot for twitch",
   "main": "index.js",
