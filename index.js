@@ -152,19 +152,20 @@ async function dbGetColour(id){
 
 // TODO: rewrite this
 async function dbAddColour(colourName, colourHex){
-    const partitionKey = "colour";
-    const colourNameSanitised = `${colourName.replace(/\s/g, '').toLowerCase()}`
-    let row = coloursRowCount+1
-    console.log(`adding row ${row} and colour/hex/sanitised: ${colourName}/${colourHex}/${colourNameSanitised}`)
-    const entity = {
-      partitionKey: partitionKey,
-      rowKey: `${row}`,
-      colourName: colourName,
-      hexCode: colourHex,
-      colourNameSanitised: colourNameSanitised
-    };
-    await colourTableClient.createEntity(entity);
-    coloursRowCount = row
+  const colourHexSanitised = colourHex.replace(/#/g, '').toLowerCase()
+  const partitionKey = "colour";
+  const colourNameSanitised = `${colourName.replace(/\s/g, '').toLowerCase()}`
+  let row = coloursRowCount+1
+  console.log(`adding row ${row} and colour/hex/sanitised: ${colourName}/${colourHexSanitised}/${colourNameSanitised}`)
+  const entity = {
+    partitionKey: partitionKey,
+    rowKey: `${row}`,
+    colourName: colourName,
+    hexCode: colourHexSanitised,
+    colourNameSanitised: colourNameSanitised
+  };
+  await colourTableClient.createEntity(entity);
+  coloursRowCount = row
 }
 
 async function dbGetEggs(userName){
