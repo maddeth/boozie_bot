@@ -35,6 +35,9 @@ function isBotMod(modName){
   return modlist.includes(modName);
 }
 
+let coloursRowCount = parseInt(await getRowCount(colourTableClient), 10)
+console.log(`setting number of rows to ${coloursRowCount}`)
+
 const obs = new OBSWebSocket();
 const app = express();
 
@@ -44,19 +47,19 @@ const booziedb = new Sequelize({
   logging: false
 });
 
-const colour = booziedb.define('colour', {
-  hex_code: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  colour_name: {
-    type: DataTypes.STRING,
-    allowNull: false
-  }
-},
-{
-  timestamps: false
-});
+// const colour = booziedb.define('colour', {
+//   hex_code: {
+//     type: DataTypes.STRING,
+//     allowNull: false
+//   },
+//   colour_name: {
+//     type: DataTypes.STRING,
+//     allowNull: false
+//   }
+// },
+// {
+//   timestamps: false
+// });
 
 const user = booziedb.define('user', {
   user_name: {
@@ -100,56 +103,71 @@ const commands = booziedb.define('commands', {
 });
 
 // DB Query functions
+async function getRowCount(tableClient){
+  let rowList = []
+  let entities = tableClient.listEntities();
+  for await (const entity of entities){
+    rowList.push(entity.RowKey)
+  }
+  return rowList.length
+}
 
-async function dbGetAllColours() {
+async function dbGetAllColours(){
   let colourMap = new Map()
   let entities = colourTableClient.listEntities();
-  for await (const entity of entities) {
+  for await (const entity of entities){
     colourMap.set(entity.colourName, entity.hexCode)
   }
   return JSON.stringify(Object.fromEntries(colourMap))
 }
 
-async function dbGetHex(event) {
+async function dbGetHex(event){
   let entities = colourTableClient.listEntities({
     queryOptions: { filter: odata`colourNameSanitised eq ${event.replace(/\s/g, '').toLowerCase()}` }
   });
 
-  for await (const entity of entities) {
+  for await (const entity of entities){
     console.log(`${entity.hexCode}`);
     return entity.hexCode
   }
 }
 
-async function dbGetColourByHex(hexCode) {
+async function dbGetColourByHex(hexCode){
   let entities = colourTableClient.listEntities({
     queryOptions: { filter: odata`hexCode eq ${hexCode.replace(/#/g, '').toLowerCase()}` }
   });
   let colourList = []
   
-  for await (const entity of entities) {
+  for await (const entity of entities){
     colourList.push(entity.colourName)
   }
   console.log(`${"\"" + colourList.join("\", \"") + "\""}`);
   return colourList ? "\"" + colourList.join("\", \"") + "\"" : false
 }
 
-async function dbGetColour(id) {
+async function dbGetColour(id){
   let entity = await colourTableClient.getEntity("colour", id);
   return "\"" + entity.colourName + "\":\"" + entity.hexCode + "\""
 }
 
 // TODO: rewrite this
-async function dbAddColour(query, values) {
-  return new Promise(function(resolve,reject){
-    booziedb.run(query, values, function(err,result){
-      if(err){return reject(err);}
-      resolve(result);
-    });
-  });
+async function dbAddColour(colourName, colourHex){
+    const partitionKey = "colour";
+    const colourNameSanitised = `${colourName.replace(/\s/g, '').toLowerCase()}`
+    let row = coloursRowCount+1
+    console.log(`adding row ${row} and colour/hex/sanitised: ${colourName}/${colourHex}/${colourNameSanitised}`)
+    const entity = {
+      partitionKey: partitionKey,
+      rowKey: `${row}`,
+      colourName: colourName,
+      hexCode: colourHex,
+      colourNameSanitised: colourNameSanitised
+    };
+    await colourTableClient.createEntity(entity);
+    coloursRowCount = row
 }
 
-async function dbGetEggs(userName) {
+async function dbGetEggs(userName){
   return user.findOne({
     where: {
       user_name: userName
@@ -157,7 +175,7 @@ async function dbGetEggs(userName) {
   });
 }
 
-async function dbAddEggs(userName, eggs) {
+async function dbAddEggs(userName, eggs){
   return await user.update({
     eggs_amount: eggs
   },
@@ -166,14 +184,14 @@ async function dbAddEggs(userName, eggs) {
   });
 }
 
-async function dbNewUserEggs(userName, eggs) {
+async function dbNewUserEggs(userName, eggs){
   await user.create({
     user_name: userName,
     eggs_amount: eggs
   })
 }
 
-async function addEggs(userName, eggs) {
+async function addEggs(userName, eggs){
   let dbUser = await dbGetEggs(userName);
   if (dbUser != null){
     dbAddEggs(userName , (dbUser.eggs_amount + eggs))
@@ -182,13 +200,13 @@ async function addEggs(userName, eggs) {
   }
 }
 
-async function addEggsToUser(eggsToAdd, userName, channel) {
+async function addEggsToUser(eggsToAdd, userName, channel){
   await addEggs(userName, eggsToAdd);
   if(typeof channel !== 'undefined'){
     const userEggs = (await dbGetEggs(userName)).eggs_amount;
     if(eggsToAdd === 1){ //because someone will complain otherwise
       chatClient.say(channel, "added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
-    } else if(eggsToAdd > 2) {
+    } else if(eggsToAdd > 2){
       chatClient.say(channel, "added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
     } else if(eggsToAdd === -1){ //because someone complained
       chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
@@ -200,18 +218,18 @@ async function addEggsToUser(eggsToAdd, userName, channel) {
   }
 }
 
-async function changeColourEvent(eventUserContent, viewer, channel) {
+async function changeColourEvent(eventUserContent, viewer, channel){
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
   if (colourString.match(regex)){
     let colourName = (await dbGetColourByHex(colourString));
     await changeColour(colourString)
-    if (colourName) {
+    if (colourName){
       chatClient.say(channel, "According to my list, that colour is " + colourName);
     }
     chatClient.say(channel, "!addeggs " + viewer + " 4");
-  } else if (findHexInDB != null) {
+  } else if (findHexInDB != null){
       chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
       chatClient.say(channel, "!addeggs " + viewer + " 4");
       await changeColour(findHexInDB)
@@ -223,7 +241,7 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
   }
 }
 
-async function changeColour(colour) {
+async function changeColour(colour){
   try {
     const {
       obsWebSocketVersion,
@@ -232,7 +250,7 @@ async function changeColour(colour) {
       rpcVersion: 1
     });
     console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
-  } catch (error) {
+  } catch (error){
     console.error('Failed to connect', error.code, error.message);
   }
   
@@ -267,7 +285,7 @@ chatClient.onRegister(() => {
 
 chatClient.onMessage(async (channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
-  if(lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
+  if(lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours"){
     chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
   }
   if(lowerCaseMessage.startsWith("!seteggs")){
@@ -305,7 +323,7 @@ chatClient.onMessage(async (channel, user, message) => {
       const commandName = commandToAddArray[1];
 
       let commandToAdd = []
-      for (let i = 2; i < commandToAddArray.length; i++) {
+      for (let i = 2; i < commandToAddArray.length; i++){
         commandToAdd += commandToAddArray[i] + " "
       }
       if(commandToAddArray.length <= 1){
@@ -327,7 +345,7 @@ chatClient.onMessage(async (channel, user, message) => {
       const commandName = commandToUpdateArray[1];
 
       let commandToUpdate = []
-      for (let i = 2; i < commandToUpdateArray.length; i++) {
+      for (let i = 2; i < commandToUpdateArray.length; i++){
         commandToUpdate += commandToUpdateArray[i] + " "
       }
       if(commandToUpdateArray.length <= 1){
@@ -382,7 +400,7 @@ chatClient.onMessage(async (channel, user, message) => {
   }
 });
 
-async function addCommand(command, commandRequest) {
+async function addCommand(command, commandRequest){
   let added = await commands.create({
     command: command,
     response: commandRequest
@@ -390,7 +408,7 @@ async function addCommand(command, commandRequest) {
   return added ? added.dataValues.command : false
 }
 
-async function updateCommand(command, commandRequest) {
+async function updateCommand(command, commandRequest){
   await commands.update({
     response: commandRequest
   },
@@ -399,11 +417,11 @@ async function updateCommand(command, commandRequest) {
   });
 }
 
-async function removeCommand(command) {
+async function removeCommand(command){
   const row = await commands.findOne({
     where: { command: command },
   });
-  if (row) {
+  if (row){
     await row.destroy();
   }
 }
@@ -421,7 +439,7 @@ async function getCommand(commandRequest){
 
 const api = new ApiClient({authProvider});
 
-async function getUser() {
+async function getUser(){
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(async user => {
     const check = await isSub(user.userDisplayName);
@@ -450,11 +468,11 @@ async function isSub(subName){
   }
 }
 
-setInterval(async function() {await isStreamLive("maddeth")}, 900000);
+setInterval(async function(){await isStreamLive("maddeth")}, 900000);
 
-async function isStreamLive(userName) {
+async function isStreamLive(userName){
   const stream = await api.streams.getStreamByUserName({name: userName,});
-	if (stream !== null) {
+	if (stream !== null){
     await getUser();
   } else {
     console.log("Stream offline")
@@ -477,6 +495,11 @@ app.get('/', (req, res) => {
   res.sendFile("/home/html/")
 });
 
+app.get('/add-colour', (req, res) => {
+  res.sendFile("/home/html/form.html")
+  res.status(200)
+});
+
 app.get("/colours/:id", async (req, res, next) => {
   let result = await dbGetColour(req.params.id)
   res.status(200).json(result);
@@ -489,19 +512,24 @@ app.get("/colours", async (req, res, next) => {
 });
 
 // TODO: rewrite this
-app.post("/colours/", (req, res, next) => {
-  let reqBody = re.body;
-  booziedb.run(`INSERT INTO colours (colour_name, hex_code) VALUES (?,?)`,
-      [reqBody.colour_name, reqBody.hex_code],
-      function (err, result) {
-          if (err) {
-              res.status(400).json({ "error": err.message })
-              return;
-          }
-          res.status(201).json({
-              "colour_id": this.lastID
-          })
-      });
+app.post("/colours/", async (req, res, next) => {
+  let reqBody = req.body;
+  let regex = /[0-9A-Fa-f]{6}/g;
+  let newHex = reqBody.hex_code
+  let newColour= String(reqBody.colour_name)
+  if (newHex.match(regex)){
+    try{
+      await dbAddColour(newColour, newHex)
+      res.status(201).json({
+        "colour_id": coloursRowCount
+      })
+    }catch(e){
+      res.status(400).json({ "error": e })
+    }
+  } else {
+    console.log(`${newColour}:${newHex} was not added`)
+    res.status(400)
+  }
 });
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
@@ -532,10 +560,10 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
   let responseData = ""
   let webhookReq = https.request(createWebHookParams, (result) => {
     result.setEncoding('utf8')
-    result.on('data', function(d) {
+    result.on('data', function(d){
       responseData = responseData + d
     })
-    .on('end', function(result) {
+    .on('end', function(result){
       let responseBody = JSON.parse(responseData)
       res.send(responseBody)
     })
@@ -549,7 +577,7 @@ app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
     req.header("Twitch-Eventsub-Message-Id"),
     req.header("Twitch-Eventsub-Message-Timestamp"),
-    req.rawBody)) {
+    req.rawBody)){
       res.status(403).send("Forbidden") // Reject requests with invalid signatures
   } else {
     readTwitchEventSub(req, res)
@@ -557,7 +585,7 @@ app.post('/notification', (req, res) => {
 });
 
 //Twitch Event Sub
-function verifySignature(messageSignature, messageID, messageTimestamp, body) {
+function verifySignature(messageSignature, messageID, messageTimestamp, body){
   let message = messageID + messageTimestamp + body
   let signature = crypto.createHmac('sha256', secret).update(message)
   let expectedSignatureHeader = "sha256=" + signature.digest("hex")
@@ -565,16 +593,16 @@ function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   return expectedSignatureHeader === messageSignature
 }
 
-function readTwitchEventSub(subBody, res) {
-  if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
+function readTwitchEventSub(subBody, res){
+  if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification"){
     subBody.send(subBody.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
   } else {
     processEventSub(subBody, res)
   } 
 }
 
-function processEventSub(event, res) {
-  if (event.header("Twitch-Eventsub-Message-Type") === "notification") {
+function processEventSub(event, res){
+  if (event.header("Twitch-Eventsub-Message-Type") === "notification"){
     let newEvent = event.body.event.reward.title
     let userInput = String(event.body.event.user_input)
     let viewerName = event.body.event.user_name
@@ -588,14 +616,14 @@ function processEventSub(event, res) {
 }
 
 //Event Sub actions
-async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
+async function actionEventSub(eventTitle, eventUserContent, viewer, channel){
   if(eventTitle === 'Convert Feed to 100 Eggs'){
     chatClient.say(channel, "!addeggs " + viewer + " 100")
     await addEggsToUser(100, viewer);
-  } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
+  } else if (eventTitle === 'Convert Feed to 2000 Eggs'){
     chatClient.say(channel, "!addeggs " + viewer + " 2000");
     await addEggsToUser(2000, viewer);
-  } else if (eventTitle === 'Sound Alert: Shadow colour') {
+  } else if (eventTitle === 'Sound Alert: Shadow colour'){
     changeColourEvent(eventUserContent, viewer, channel)
   }
 }
