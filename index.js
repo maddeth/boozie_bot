@@ -41,18 +41,59 @@ console.log(`setting number of rows to ${coloursRowCount}`)
 const obs = new OBSWebSocket();
 const app = express();
 
-const booziedb = new Sequelize({
-  dialect: 'sqlite',
-  storage: databaseLocation,
-  logging: false
-});
+// const booziedb = new Sequelize({
+//   dialect: 'sqlite',
+//   storage: databaseLocation,
+//   logging: false
+// });
 
-// const colour = booziedb.define('colour', {
-//   hex_code: {
+// // const colour = booziedb.define('colour', {
+// //   hex_code: {
+// //     type: DataTypes.STRING,
+// //     allowNull: false
+// //   },
+// //   colour_name: {
+// //     type: DataTypes.STRING,
+// //     allowNull: false
+// //   }
+// // },
+// // {
+// //   timestamps: false
+// // });
+
+// const user = booziedb.define('user', {
+//   user_name: {
 //     type: DataTypes.STRING,
 //     allowNull: false
 //   },
-//   colour_name: {
+//   eggs_amount: {
+//     type: DataTypes.INTEGER,
+//     allowNull: false
+//   }
+// },
+// {
+//     timestamps: false
+// });
+
+// const quotes = booziedb.define('quotes', {
+//   quote: {
+//     type: DataTypes.STRING,
+//     allowNull: false
+//   }
+// });
+
+// const commands = booziedb.define('commands', {
+//   id: {
+//     allowNull: false,
+//     autoIncrement: true,
+//     primaryKey: true,
+//     type: DataTypes.INTEGER
+//   },
+//   command: {
+//     type: DataTypes.STRING,
+//     allowNull: false
+//   },
+//   response: {
 //     type: DataTypes.STRING,
 //     allowNull: false
 //   }
@@ -60,47 +101,6 @@ const booziedb = new Sequelize({
 // {
 //   timestamps: false
 // });
-
-const user = booziedb.define('user', {
-  user_name: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  eggs_amount: {
-    type: DataTypes.INTEGER,
-    allowNull: false
-  }
-},
-{
-    timestamps: false
-});
-
-const quotes = booziedb.define('quotes', {
-  quote: {
-    type: DataTypes.STRING,
-    allowNull: false
-  }
-});
-
-const commands = booziedb.define('commands', {
-  id: {
-    allowNull: false,
-    autoIncrement: true,
-    primaryKey: true,
-    type: DataTypes.INTEGER
-  },
-  command: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  response: {
-    type: DataTypes.STRING,
-    allowNull: false
-  }
-},
-{
-  timestamps: false
-});
 
 // DB Query functions
 async function getRowCount(tableClient){
@@ -141,8 +141,11 @@ async function dbGetColourByHex(hexCode){
   for await (const entity of entities){
     colourList.push(entity.colourName)
   }
-  console.log(`${"\"" + colourList.join("\", \"") + "\""}`);
-  return colourList ? "\"" + colourList.join("\", \"") + "\"" : false
+  if (colourList.length > 0){
+    return "\"" + colourList.join("\", \"") + "\""
+  } else {
+    return false
+  }
 }
 
 async function dbGetColour(id){
