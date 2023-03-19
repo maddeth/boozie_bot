@@ -195,9 +195,6 @@ chatClient.onRegister(() => {
   console.log("connected")
 });
 
-// let annoyUser = "trumanzi"
-// let annoyEmote = "cmonBruh"
-
 chatClient.onMessage(async (channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
   if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
