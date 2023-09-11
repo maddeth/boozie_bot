@@ -6,10 +6,10 @@ import https from 'https';
 import OBSWebSocket from 'obs-websocket-js';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import { promises as fs } from 'fs';
-import { Sequelize, DataTypes } from 'sequelize';
 import { ApiClient } from '@twurple/api';
-import { notStrictEqual } from 'assert';
-import { odata, TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
+import fetch from 'node-fetch';
+import { WebSocketServer } from 'ws';
+import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
 
 const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
 const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
@@ -21,21 +21,37 @@ const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
 const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
-const account = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccount;
-const accountKey = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccountKey;
 const port = 3000;
+const webSocketPort = 3001;
 
-const azureTableEndpoint = "https://" + account + ".table.core.windows.net/";
-const azureTableCredential = new AzureNamedKeyCredential(account, accountKey);
-const colourTableName = "colours";
-const colourTableClient = new TableClient(azureTableEndpoint, colourTableName, azureTableCredential);
+// const azureTableEndpoint = "https://" + account + ".table.core.windows.net/";
+// const azureTableCredential = new AzureNamedKeyCredential(account, accountKey);
+// const colourTableName = "colours";
+// const eggsTableName = "eggs";
+//const eggsTableClient = new TableClient(azureTableEndpoint, eggsTableName, azureTableCredential);
+
+const wss = new WebSocketServer({ port: webSocketPort });
+const connectedClients = {};
+
+wss.on('connection', function connection(ws) {
+  const clientId = generateUniqueClientId();
+  connectedClients[clientId] = ws;
+  ws.on('message', function message(data) {
+    console.log(clientId + ' %s', data);
+  });
+});
+
+function generateUniqueClientId() {
+  const id = Math.random().toString(36).substring(2, 15);
+  return id;
+}
 
 function isBotMod(modName) {
   return modlist.includes(modName);
 }
 
-let coloursRowCount = parseInt(await getRowCount(colourTableClient), 10)
-console.log(`setting number of rows to ${coloursRowCount}`)
+// let eggsRowCount = parseInt(await getRowCount(eggsTableClient), 10)
+
 
 const obs = new OBSWebSocket();
 const app = express();
@@ -49,71 +65,37 @@ async function getRowCount(tableClient) {
   return rowList.length
 }
 
-async function dbGetAllColours() {
-  let colourMap = []
-  let colourObject = {}
-  let i = 0
-  let entities = colourTableClient.listEntities();
-  for await (const entity of entities) {
-    colourObject = { Name: entity.colourName, Hex: entity.hexCode }
-    colourMap.push(colourObject)
-  }
-  // return JSON.stringify(Object.fromEntries(colourMap))
-  return JSON.stringify(colourMap)
-}
+// async function dbGetAllEggs() {
+//   let eggsMap = []
+//   let eggsObject = {}
+//   let i = 0
+//   let entities = eggsTableClient.listEntities();
+//   for await (const entity of entities) {
+//     eggsObject = { Name: entity.userName, Eggs: entity.eggsAmount }
+//     eggsMap.push(eggsObject)
+//   }
+//   return JSON.stringify(eggsMap)
+// }
 
-async function dbGetHex(event) {
-  let entities = colourTableClient.listEntities({
-    queryOptions: { filter: odata`colourNameSanitised eq ${event.replace(/\s/g, '').toLowerCase()}` }
-  });
+// async function dbAddUser(userName, eggs) {
+//   const eggsSanitised = eggs
+//   const partitionKey = "user";
+//   const userNameSanitised = `${userName.replace(/\s/g, '').toLowerCase()}`
+//   let row = usersRowCount + 1
+//   console.log(`adding row ${row} and user: ${userNameSanitised}/${eggsSanitised}`)
+//   const entity = {
+//     partitionKey: partitionKey,
+//     rowKey: `${row}`,
+//     userName: userNameSanitised,
+//     eggsAmount: eggsSanitised
+//   };
+//   await eggsTableClient.createEntity(entity);
+//   eggsRowCount = row
+// }
 
-  for await (const entity of entities) {
-    console.log(`${entity.hexCode}`);
-    return entity.hexCode
-  }
-}
-
-async function dbGetColourByHex(hexCode) {
-  let entities = colourTableClient.listEntities({
-    queryOptions: { filter: odata`hexCode eq ${hexCode.replace(/#/g, '').toLowerCase()}` }
-  });
-  let colourList = []
-
-  for await (const entity of entities) {
-    colourList.push(entity.colourName)
-  }
-  if (colourList.length > 0) {
-    return "\"" + colourList.join("\", \"") + "\""
-  } else {
-    return false
-  }
-}
-
-async function dbGetColour(id) {
-  let entity = await colourTableClient.getEntity("colour", id);
-  return "\"" + entity.colourName + "\":\"" + entity.hexCode + "\""
-}
-
-// TODO: rewrite this
-async function dbAddColour(colourName, colourHex) {
-  const colourHexSanitised = colourHex.replace(/#/g, '').toLowerCase()
-  const partitionKey = "colour";
-  const colourNameSanitised = `${colourName.replace(/\s/g, '').toLowerCase()}`
-  let row = coloursRowCount + 1
-  console.log(`adding row ${row} and colour/hex/sanitised: ${colourName}/${colourHexSanitised}/${colourNameSanitised}`)
-  const entity = {
-    partitionKey: partitionKey,
-    rowKey: `${row}`,
-    colourName: colourName,
-    hexCode: colourHexSanitised,
-    colourNameSanitised: colourNameSanitised
-  };
-  await colourTableClient.createEntity(entity);
-  coloursRowCount = row
-}
 
 async function addEggsToUser(eggsToAdd, userName, channel) {
-  //await addEggs(userName, eggsToAdd);
+  await addEggs(userName, eggsToAdd);
   if (typeof channel !== 'undefined') {
     //const userEggs = (await dbGetEggs(userName)).eggs_amount;
     if (eggsToAdd === 1) { //because someone will complain otherwise
@@ -195,27 +177,33 @@ chatClient.onRegister(() => {
   console.log("connected")
 });
 
+async function sendWebsocket(data) {
+  for (const client in connectedClients) {
+    if (connectedClients[client]) {
+      connectedClients[client].send(JSON.stringify(data));
+    }
+  }
+}
+
 chatClient.onMessage(async (channel, user, message) => {
   let lowerCaseMessage = message.toLowerCase();
   if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
     chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
   }
-  // if (lowerCaseMessage.startsWith("!annoy")) {
-  //   const annoy = lowerCaseMessage.split(" ");
-  //   const annoyCase = message.split(" ");
-  //   if(annoy.length <= 2 || annoy.length > 3 ){
-  //     chatClient.say(channel, "The command is !annoy username emote. This costs 100 eggs");
-  //     chatClient.say(channel, "Currently annoying " + annoyUser + " with " + annoyEmote);
-  //   } else {
-  //     annoyUser = annoy[1]
-  //     annoyEmote = annoyCase[2]
-  //     chatClient.say(channel, "Annoying " + annoyUser + " with " + annoyEmote);
-  //     chatClient.say(channel, "!addeggs " + user + " -100")
-  //   }
-  // }
-  if (lowerCaseMessage === "!test") { 
+  if (lowerCaseMessage === "!test") {
     chatClient.say(channel, user + "icles");
   }
+  if (lowerCaseMessage.startsWith("!tts")) {
+    var toTts = lowerCaseMessage.slice(4);
+    var id = await runTTS(toTts)
+    const tts = {
+      type: "tts",
+      id: id
+    }
+    await sendWebsocket(tts)
+  }
+
+
   // if (user === annoyUser) {
   //   chatClient.say(channel, annoyEmote)
   // }
@@ -457,6 +445,7 @@ app.post("/colours/", async (req, res, next) => {
   let regex = /[0-9A-Fa-f]{6}/g;
   let newHex = reqBody.hex_code
   let newColour = String(reqBody.colour_name)
+  console.log(newColour)
   if (newHex.match(regex)) {
     try {
       await dbAddColour(newColour, newHex)
@@ -567,7 +556,50 @@ async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
     chatClient.say(channel, "!addeggs " + viewer + " 2000");
     await addEggsToUser(2000, viewer);
-  } else if (eventTitle === 'Sound Alert: Shadow colour') {
+  } else if (eventTitle === 'Shadow Colour') {
+    const colour = {
+      type: "redeem",
+      id: "https://www.myinstants.com/media/sounds/unlimited-colors.mp3"
+    }
+    await sendWebsocket(colour)
     changeColourEvent(eventUserContent, viewer, channel)
   }
 }
+
+const ttsStreamElementsHandler = async (text) => {
+  try {
+    const url = `https://api.streamelements.com/kappa/v2/speech?voice=Geraint&text=${encodeURI(text)}`;
+    const result = await fetch(url, { method: 'GET', });
+    const buffer = await result.buffer();
+    return buffer;
+  } catch (error) {
+    console.error(error);
+  }
+  return null;
+};
+
+async function getVoiceBuffer(text) {
+  const buffer = await ttsStreamElementsHandler(text);
+  return buffer;
+}
+
+const runTTS = async (message) => {
+  let currentMessage = message;
+  let buffer = Buffer.from([]);
+
+  if (currentMessage.length > 0) {
+    const result = await getVoiceBuffer(currentMessage);
+    if (result) {
+      buffer = Buffer.concat([buffer, result]);
+    }
+  }
+
+  const id = Math.random().toString(36).substring(2, 15);
+  fs.writeFile(`/home/html/tts/${id}.mp3`, buffer);
+  return id;
+}
+
+app.get('/tts/:id', (req, res) => {
+  let audioFilePath = `/home/html/tts/${req.params.id}.mp3`
+  res.sendFile(audioFilePath);
+});
