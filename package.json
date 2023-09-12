@@ -2,13 +2,14 @@
   "name": "boozie_bot",
   "version": "1.0.0",
   "dependencies": {
+    "@azure/data-tables": "^13.2.1",
     "@twurple/api": "^5.3.1",
     "@twurple/auth": "^5.2.7",
     "@twurple/chat": "^5.2.7",
     "express": "^4.18.2",
     "obs-websocket-js": "^5.0.2",
     "sequelize": "^6.28.0",
-    "sqlite3": "^5.1.4"
+    "ws": "^8.14.1"
   },
   "description": "bot for twitch",
   "main": "index.js",
