@@ -12,13 +12,13 @@ import { WebSocketServer } from 'ws';
 import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
-import config from './config.json';
+import config from './config.json' assert { type: "json" };;
 
 const tokenData = JSON.parse(await fs.readFile('./tokens.json', 'UTF-8'));
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 
-const clientId = config.clientId //= config.clientId;
+const clientId = config.clientId;
 const clientSecret = config.clientSecret;
 const bearerToken = config.bearer;
 const secret = config.secret;
@@ -66,8 +66,6 @@ wss.on('connection', function connection(ws) {
 function isBotMod(modName) {
   return modlist.includes(modName);
 }
-
-// let eggsRowCount = parseInt(await getRowCount(eggsTableClient), 10)
 
 const obs = new OBSWebSocket();
 const app = express();
