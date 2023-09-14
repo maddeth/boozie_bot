@@ -10,6 +10,7 @@ import { ApiClient } from '@twurple/api';
 import fetch from 'node-fetch';
 import { WebSocketServer } from 'ws';
 import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
+import { dbCheckUserExists, dbGetEggs, dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 
 const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
 const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
@@ -23,15 +24,12 @@ const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 const port = 3000;
 const webSocketPort = 3001;
-
-// const azureTableEndpoint = "https://" + account + ".table.core.windows.net/";
-// const azureTableCredential = new AzureNamedKeyCredential(account, accountKey);
-// const colourTableName = "colours";
-// const eggsTableName = "eggs";
-//const eggsTableClient = new TableClient(azureTableEndpoint, eggsTableName, azureTableCredential);
+const myChannel = 'maddeth'
 
 const wss = new WebSocketServer({ port: webSocketPort });
 const connectedClients = {};
+
+let userEggMap = await dbGetAllEggs()
 
 wss.on('connection', function connection(ws) {
   const clientId = generateUniqueClientId();
@@ -52,67 +50,28 @@ function isBotMod(modName) {
 
 // let eggsRowCount = parseInt(await getRowCount(eggsTableClient), 10)
 
-
 const obs = new OBSWebSocket();
 const app = express();
 
-async function getRowCount(tableClient) {
-  let rowList = []
-  let entities = tableClient.listEntities();
-  for await (const entity of entities) {
-    rowList.push(entity.RowKey)
-  }
-  return rowList.length
-}
-
-// async function dbGetAllEggs() {
-//   let eggsMap = []
-//   let eggsObject = {}
-//   let i = 0
-//   let entities = eggsTableClient.listEntities();
-//   for await (const entity of entities) {
-//     eggsObject = { Name: entity.userName, Eggs: entity.eggsAmount }
-//     eggsMap.push(eggsObject)
-//   }
-//   return JSON.stringify(eggsMap)
-// }
-
-// async function dbAddUser(userName, eggs) {
-//   const eggsSanitised = eggs
-//   const partitionKey = "user";
-//   const userNameSanitised = `${userName.replace(/\s/g, '').toLowerCase()}`
-//   let row = usersRowCount + 1
-//   console.log(`adding row ${row} and user: ${userNameSanitised}/${eggsSanitised}`)
-//   const entity = {
-//     partitionKey: partitionKey,
-//     rowKey: `${row}`,
-//     userName: userNameSanitised,
-//     eggsAmount: eggsSanitised
-//   };
-//   await eggsTableClient.createEntity(entity);
-//   eggsRowCount = row
-// }
-
-
-async function addEggsToUser(eggsToAdd, userName, channel) {
-  await addEggs(userName, eggsToAdd);
-  if (typeof channel !== 'undefined') {
-    //const userEggs = (await dbGetEggs(userName)).eggs_amount;
+async function addEggsToUser(eggsToAdd, userName) {
+  let userId = await dbCheckUserExists(userName);
+  if (userId != null) {
+    const userEggs = dbGetEggs(userId);
     if (eggsToAdd === 1) { //because someone will complain otherwise
-      chatClient.say(channel, "added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
+      sendChatMessage("added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
     } else if (eggsToAdd > 2) {
-      chatClient.say(channel, "added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
+      sendChatMessage("added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
     } else if (eggsToAdd === -1) { //because someone complained
-      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
+      sendChatMessage("removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
     } else if (eggsToAdd < 0) {
-      chatClient.say(channel, "removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
+      sendChatMessage("removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
     } else {
-      chatClient.say(channel, "Why?")
+      sendChatMessage("Why?")
     }
   }
 }
 
-async function changeColourEvent(eventUserContent, viewer, channel) {
+async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
@@ -120,17 +79,17 @@ async function changeColourEvent(eventUserContent, viewer, channel) {
     let colourName = (await dbGetColourByHex(colourString));
     await changeColour(colourString)
     if (colourName) {
-      chatClient.say(channel, "According to my list, that colour is " + colourName);
+      sendChatMessage("According to my list, that colour is " + colourName);
     }
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
+    sendChatMessage("!addeggs " + viewer + " 4");
   } else if (findHexInDB != null) {
-    chatClient.say(channel, "That colour is on my list! Congratulations, Here are 4 eggs!");
-    chatClient.say(channel, "!addeggs " + viewer + " 4");
+    sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!");
+    sendChatMessage("!addeggs " + viewer + " 4");
     await changeColour(findHexInDB)
   } else {
     const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
     let randoColour = await dbGetColourByHex(randomString);
-    chatClient.say(channel, "That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString));
+    sendChatMessage("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString));
     await changeColour(randomString)
   }
 }
@@ -169,12 +128,12 @@ const authProvider = new RefreshingAuthProvider({
   onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
 }, tokenData);
 
-const chatClient = new ChatClient({ authProvider, channels: ['maddeth'] });
+const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
 
 chatClient.connect();
 
 chatClient.onRegister(() => {
-  console.log("connected")
+  console.log("Chat Client connected")
 });
 
 async function sendWebsocket(data) {
@@ -185,176 +144,79 @@ async function sendWebsocket(data) {
   }
 }
 
-chatClient.onMessage(async (channel, user, message) => {
-  let lowerCaseMessage = message.toLowerCase();
-  if (lowerCaseMessage === "!colourlist" || lowerCaseMessage === "!colorlist" || lowerCaseMessage === "!colours") {
-    chatClient.say(channel, user + " - you can find the colour list here " + myUrl + "/colours");
+chatClient.onMessage(async (myChannel, user, message) => {
+  await processMessage(user, message)
+});
+
+async function processMessage(user, message) {
+  let unformattedMessage = message
+  message = message.toLowerCase()
+  if (message.startsWith("!colourlist") || message.startsWith("!colorlist") || message.startsWith("!colours")) {
+    sendChatMessage(user + " - you can find the colour list here " + myUrl + "/colours");
+    return
   }
-  if (lowerCaseMessage === "!test") {
-    chatClient.say(channel, user + "icles");
+  if (message.startsWith("!test")) {
+    sendChatMessage(user + "icles");
+    return
   }
-  if (lowerCaseMessage.startsWith("!tts")) {
-    var toTts = lowerCaseMessage.slice(4);
+  if (message.startsWith("!eggstest")) {
+    var messageBody = unformattedMessage.slice(9)
+    var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g);
+    stringArray = stringArray.filter(item => item.trim() !== '');
+
+    if (stringArray.length != 2) {
+      sendChatMessage("Incorrect arguements, please use !addeggs username numberOfEggs")
+      return
+    }
+    if (typeof Number(stringArray[0]) === 'number' && isNaN(Number(stringArray[1]))) {
+      sendChatMessage("Command in wrong format, please use !addeggs username numberOfEggs")
+      return
+    } else {
+      let eggsToAdd = Number(stringArray[1])
+      let userToUpdate = stringArray[0]
+      await eggUpdateCommand(userToUpdate, eggsToAdd, true) //true to test, set to false to not spam chat
+      return
+    }
+  }
+  if (message.startsWith("!tts")) {
+    var toTts = message.slice(4);
     var id = await runTTS(toTts)
     const tts = {
       type: "tts",
       id: id
     }
     await sendWebsocket(tts)
+    return
   }
+}
+
+async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
+  var getInfoByUser = userEggMap.find(item => item.NameLower === userToUpdate.toLowerCase());
+  if (getInfoByUser === undefined) {
+    dbAddEggUser(userToUpdate, eggsToAdd)
+    printToChat ? sendChatMessage("Updated " + userToUpdate + " with " + eggsToAdd + " eggs, they now have " + eggsToAdd) : null
+    userEggMap = await dbGetAllEggs()
+    return
+  } else {
+    var userEggValue = Number(getInfoByUser.Eggs) + eggsToAdd
+    if (userEggValue < 0) {
+      sendChatMessage("you don't have enough eggs")
+      userEggMap = await dbGetAllEggs()
+      return
+    } else {
+      var userEggId = getInfoByUser.ID
+      dbUpdateEggs(userEggId, userEggValue)
+      printToChat ? sendChatMessage("Updated " + userToUpdate + " with " + eggsToAdd + " eggs, they now have " + userEggValue) : null
+      userEggMap = await dbGetAllEggs()
+      return
+    }
+  }
+}
 
 
-  // if (user === annoyUser) {
-  //   chatClient.say(channel, annoyEmote)
-  // }
-  // if(lowerCaseMessage.startsWith("!seteggs")){
-  //   let isAMod = isBotMod(user);
-  //   const setEggs = lowerCaseMessage.split(" ");
-  //   const eggNumber = parseInt(Number(setEggs[2]))
-  //   const eggUser = setEggs[1]
-  //   if(isAMod){
-  //     if(setEggs.length <= 2 || setEggs.length > 3 ){
-  //       chatClient.say(channel, "The command is !seteggs username eggs");
-  //     } else if (Number.isInteger(eggNumber)){
-  //       await addEggsToUser(eggNumber, eggUser, channel);
-  //     } else {
-  //       chatClient.say(channel,"The command is !seteggs username eggs");
-  //     }
-  //   } else {
-  //     chatClient.say(channel,"Looks like you are not a bot mod " + user + "... fuck off");
-  //   }
-  // }
-  // if(lowerCaseMessage.startsWith("!geteggs")){
-  //   const getEggsArray = lowerCaseMessage.split(" ");
-  //   const diffUser = getEggsArray[1];
-  //   if(typeof diffUser !== 'undefined'){
-  //     const userEggs = (await dbGetEggs(diffUser)).eggs_amount
-  //     chatClient.say(channel, diffUser + " has " + userEggs + " eggs")
-  //   } else {
-  //     const userEggs = (await dbGetEggs(user)).eggs_amount
-  //     chatClient.say(channel, user + " has " + userEggs + " eggs")
-  //   }
-  // }
-  // if(lowerCaseMessage.startsWith("!addcommand")){
-  //   let isAMod = isBotMod(user);
-  //   if(isAMod){
-  //     const commandToAddArray = lowerCaseMessage.split(" ");
-  //     const commandName = commandToAddArray[1];
-
-  //     let commandToAdd = []
-  //     for (let i = 2; i < commandToAddArray.length; i++){
-  //       commandToAdd += commandToAddArray[i] + " "
-  //     }
-  //     if(commandToAddArray.length <= 1){
-  //       chatClient.say(channel, "Command does not have enough arguements")
-  //     } else {
-  //       try {
-  //         let response = await addCommand(commandName, commandToAdd)
-  //         chatClient.say(channel, "Command " + response + " added")
-  //       } catch {
-  //         console.log("Command failed to add")
-  //       }
-  //     }
-  //   }
-  // }
-  // if(lowerCaseMessage.startsWith("!updatecommand")){
-  //   let isAMod = isBotMod(user);
-  //   if(isAMod){
-  //     const commandToUpdateArray = lowerCaseMessage.split(" ");
-  //     const commandName = commandToUpdateArray[1];
-
-  //     let commandToUpdate = []
-  //     for (let i = 2; i < commandToUpdateArray.length; i++){
-  //       commandToUpdate += commandToUpdateArray[i] + " "
-  //     }
-  //     if(commandToUpdateArray.length <= 1){
-  //       chatClient.say(channel, "Command does not have enough arguements")
-  //     } else {
-  //       try {
-  //         await updateCommand(commandName, commandToUpdate)
-  //         chatClient.say(channel, "Command " + commandName + " updated")
-  //       } catch {
-  //         console.log("Command failed to update")
-  //       }
-  //     }
-  //   }
-  // }
-  // if(lowerCaseMessage.startsWith("!removecommand")){
-  //   let isAMod = isBotMod(user);
-  //   if(isAMod){
-  //     const commandToRemoveArray = lowerCaseMessage.split(" ");
-  //     const commandName = commandToRemoveArray[1];
-
-  //     if(commandToRemoveArray.length <= 1){
-  //       chatClient.say(channel, "Command does not have enough arguements")
-  //     } else {
-  //       try {
-  //         await removeCommand(commandName)
-  //         chatClient.say(channel, "Command " + commandName + " deleted")
-  //       } catch {
-  //         console.log("Command failed to update")
-  //       }
-  //     }
-  //   }
-  //}
-  // if(lowerCaseMessage.startsWith("!quote")){
-  //   const quoteCommand = lowerCaseMessage.split(" ");
-  //   const commandType = quoteCommand[1];
-  //   let isAMod = isBotMod(user);    
-  //   if(isAMod){
-  //     if(commandToRemoveArray.length <= 2){
-  //       chatClient.say(channel, "Command does not have enough arguements")
-  //     } else {
-
-  //     }
-  //   }
-  // }
-  // if(lowerCaseMessage.startsWith("!")){
-  //   const commandArray = lowerCaseMessage.split(" ");
-  //   const command = commandArray[0];
-  //   let response = await getCommand(command)
-  //   if(response){
-  //     chatClient.say(channel, response)
-  //   }
-  // }
-});
-
-// async function addCommand(command, commandRequest){
-//   let added = await commands.create({
-//     command: command,
-//     response: commandRequest
-//   })
-//   return added ? added.dataValues.command : false
-// }
-
-// async function updateCommand(command, commandRequest){
-//   await commands.update({
-//     response: commandRequest
-//   },
-//   {
-//     where: { command: command },
-//   });
-// }
-
-// async function removeCommand(command){
-//   const row = await commands.findOne({
-//     where: { command: command },
-//   });
-//   if (row){
-//     await row.destroy();
-//   }
-// }
-
-
-// async function getCommand(commandRequest){
-//   let commandResponse = await commands.findOne({
-//     attributes: ['response'],
-//     where: {
-//       command: commandRequest
-//     }
-//   });
-//   return commandResponse ? commandResponse.dataValues.response : false
-// }
+async function sendChatMessage(message) {
+  chatClient.say(myChannel, message)
+}
 
 const api = new ApiClient({ authProvider });
 
@@ -362,7 +224,7 @@ async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(async user => {
     const check = await isSub(user.userDisplayName);
-    addEggsToUser(check, user.userDisplayName)
+    eggUpdateCommand(user.userDisplayName, check, true)
   });
 }
 
@@ -387,14 +249,15 @@ async function isSub(subName) {
   }
 }
 
-setInterval(async function () { await isStreamLive("maddeth") }, 900000);
+setInterval(async function () { await isStreamLive(myChannel) }, 900000);
 
-async function isStreamLive(userName) {
-  const stream = await api.streams.getStreamByUserName({ name: userName, });
+async function isStreamLive(twitchChannel) {
+  const stream = await api.streams.getStreamByUserName({ name: twitchChannel, });
   if (stream !== null) {
     await getUser();
   } else {
     console.log("Stream offline")
+    await getUser();
   }
 }
 
@@ -437,6 +300,11 @@ app.get("/colours", (req, res) => {
 app.get("/colour-list.json", async (req, res, next) => {
   let result = await dbGetAllColours()
   res.status(200).json(JSON.parse(result))
+});
+
+app.get('/tts/:id', (req, res) => {
+  let audioFilePath = `/home/html/tts/${req.params.id}.mp3`
+  res.sendFile(audioFilePath);
 });
 
 // TODO: rewrite this
@@ -539,22 +407,21 @@ function processEventSub(event, res) {
     let newEvent = event.body.event.reward.title
     let userInput = String(event.body.event.user_input)
     let viewerName = event.body.event.user_name
-    let channel = event.body.event.broadcaster_user_login
 
     console.log(viewerName + " redeemed " + "\"" + newEvent + "\"")
     res.send("") // Send a 200 status
 
-    actionEventSub(newEvent, userInput, viewerName, channel)
+    actionEventSub(newEvent, userInput, viewerName)
   }
 }
 
 //Event Sub actions
-async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
+async function actionEventSub(eventTitle, eventUserContent, viewer) {
   if (eventTitle === 'Convert Feed to 100 Eggs') {
-    chatClient.say(channel, "!addeggs " + viewer + " 100")
+    sendChatMessage("!addeggs " + viewer + " 100")
     await addEggsToUser(100, viewer);
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
-    chatClient.say(channel, "!addeggs " + viewer + " 2000");
+    sendChatMessage("!addeggs " + viewer + " 2000");
     await addEggsToUser(2000, viewer);
   } else if (eventTitle === 'Shadow Colour') {
     const colour = {
@@ -562,7 +429,7 @@ async function actionEventSub(eventTitle, eventUserContent, viewer, channel) {
       id: "https://www.myinstants.com/media/sounds/unlimited-colors.mp3"
     }
     await sendWebsocket(colour)
-    changeColourEvent(eventUserContent, viewer, channel)
+    changeColourEvent(eventUserContent, viewer)
   }
 }
 
@@ -598,8 +465,3 @@ const runTTS = async (message) => {
   fs.writeFile(`/home/html/tts/${id}.mp3`, buffer);
   return id;
 }
-
-app.get('/tts/:id', (req, res) => {
-  let audioFilePath = `/home/html/tts/${req.params.id}.mp3`
-  res.sendFile(audioFilePath);
-});
