@@ -9,6 +9,7 @@
     "express": "^4.18.2",
     "obs-websocket-js": "^5.0.2",
     "sequelize": "^6.28.0",
+    "uuid": "^9.0.1",
     "ws": "^8.14.1"
   },
   "description": "bot for twitch",

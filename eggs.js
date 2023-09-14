@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import { odata, TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
+import { v4 as uuidv4 } from 'uuid';
 
 const account = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccount;
 const accountKey = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccountKey;
@@ -13,11 +14,6 @@ const partitionKey = "egg";
 export let eggsRowCount = parseInt(await getRowCount(eggTableClient), 10)
 
 console.log(`setting number of rows for eggs db to ${eggsRowCount}`)
-
-// export async function eggsRowCount() {
-//   let rowNumbers = parseInt(await getRowCount(eggTableClient), 10)
-//   return rowNumbers
-// }
 
 async function getRowCount(tableClient) {
   let rowList = []
@@ -49,20 +45,22 @@ export async function dbGetEggs(userId) {
   return userData;
 }
 
-
 export async function dbAddEggUser(userName, eggAmount) {
+  const uuid = uuidv4();
   const userNameSanitised = `${userName.toLowerCase()}`
-  let row = eggsRowCount + 1
-  console.log(`adding row ${row} and userName/eggsAmount/userNameSanitised: ${userName}/${eggAmount}/${userNameSanitised}`)
+  console.log(`adding row ${uuid} and userName/eggsAmount/userNameSanitised: ${userName}/${eggAmount}/${userNameSanitised}`)
   const entity = {
     partitionKey: partitionKey,
-    rowKey: `${row}`,
+    rowKey: uuid,
     userName: userName,
     eggsAmount: eggAmount,
     userNameSanitised: userNameSanitised
   };
-  await eggTableClient.createEntity(entity);
-  eggsRowCount = parseInt(await getRowCount(eggTableClient), 10)
+  try {
+    await eggTableClient.createEntity(entity);
+  } catch (e) {
+    console.log("Failed to add user", e)
+  }
 }
 
 export async function dbGetAllEggs() {

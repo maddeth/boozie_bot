@@ -10,39 +10,58 @@ import { ApiClient } from '@twurple/api';
 import fetch from 'node-fetch';
 import { WebSocketServer } from 'ws';
 import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
-import { dbCheckUserExists, dbGetEggs, dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
+import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
+import { v4 as uuidv4 } from 'uuid';
+import config from './config.json';
 
-const clientId = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientId;
-const clientSecret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).clientSecret;
 const tokenData = JSON.parse(await fs.readFile('./tokens.json', 'UTF-8'));
-const bearerToken = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).bearer;
-const secret = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).secret;
-const obsPassword = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsPassword;
-const obsIP = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).obsIP;
-const myUrl = JSON.parse(await fs.readFile('./secret.json', 'UTF-8')).webAddress;
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
-const port = 3000;
-const webSocketPort = 3001;
-const myChannel = 'maddeth'
 
-const wss = new WebSocketServer({ port: webSocketPort });
+const clientId = config.clientId //= config.clientId;
+const clientSecret = config.clientSecret;
+const bearerToken = config.bearer;
+const secret = config.secret;
+const obsPassword = config.obsPassword;
+const obsIP = config.obsIP;
+const myUrl = config.webAddress;
+const port = config.port;
+const webSocketPort = config.webSocketPort;
+const myChannel = config.myChannel;
+const eggUpdateInterval = config.eggUpdateInterval; //in milliseconds 900000 seconds is 15 minutes
+
 const connectedClients = {};
+const wss = new WebSocketServer({ port: webSocketPort });
+
+const authProvider = new RefreshingAuthProvider({
+  clientId,
+  clientSecret,
+  onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
+}, tokenData);
+
+const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
+
+chatClient.connect();
+
+chatClient.onRegister(() => {
+  console.log("Chat Client connected")
+});
+
+async function sendChatMessage(message) {
+  chatClient.say(myChannel, message)
+}
+
+const api = new ApiClient({ authProvider });
 
 let userEggMap = await dbGetAllEggs()
 
 wss.on('connection', function connection(ws) {
-  const clientId = generateUniqueClientId();
+  const clientId = uuidv4();
   connectedClients[clientId] = ws;
   ws.on('message', function message(data) {
     console.log(clientId + ' %s', data);
   });
 });
-
-function generateUniqueClientId() {
-  const id = Math.random().toString(36).substring(2, 15);
-  return id;
-}
 
 function isBotMod(modName) {
   return modlist.includes(modName);
@@ -52,24 +71,6 @@ function isBotMod(modName) {
 
 const obs = new OBSWebSocket();
 const app = express();
-
-async function addEggsToUser(eggsToAdd, userName) {
-  let userId = await dbCheckUserExists(userName);
-  if (userId != null) {
-    const userEggs = dbGetEggs(userId);
-    if (eggsToAdd === 1) { //because someone will complain otherwise
-      sendChatMessage("added " + eggsToAdd + " egg, " + userName + " now has " + userEggs + " eggs")
-    } else if (eggsToAdd > 2) {
-      sendChatMessage("added " + eggsToAdd + " eggs, " + userName + " now has " + userEggs + " eggs")
-    } else if (eggsToAdd === -1) { //because someone complained
-      sendChatMessage("removed " + Math.abs(eggsToAdd) + " egg, " + userName + " now has " + userEggs + " eggs")
-    } else if (eggsToAdd < 0) {
-      sendChatMessage("removed " + Math.abs(eggsToAdd) + " eggs, " + userName + " now has " + userEggs + " eggs")
-    } else {
-      sendChatMessage("Why?")
-    }
-  }
-}
 
 async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
@@ -121,21 +122,6 @@ async function changeColour(colour) {
   await obs.disconnect();
 }
 
-// Chat IRC Client:
-const authProvider = new RefreshingAuthProvider({
-  clientId,
-  clientSecret,
-  onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
-}, tokenData);
-
-const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
-
-chatClient.connect();
-
-chatClient.onRegister(() => {
-  console.log("Chat Client connected")
-});
-
 async function sendWebsocket(data) {
   for (const client in connectedClients) {
     if (connectedClients[client]) {
@@ -160,21 +146,28 @@ async function processMessage(user, message) {
     return
   }
   if (message.startsWith("!eggstest")) {
-    var messageBody = unformattedMessage.slice(9)
-    var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g);
-    stringArray = stringArray.filter(item => item.trim() !== '');
+    if (isBotMod(user)) {
+      var messageBody = unformattedMessage.slice(9)
+      var command = unformattedMessage.slice(-9)
+      var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g);
+      stringArray = stringArray.filter(item => item.trim() !== '');
 
-    if (stringArray.length != 2) {
-      sendChatMessage("Incorrect arguements, please use !addeggs username numberOfEggs")
-      return
+      if (stringArray.length != 2) {
+        sendChatMessage("Incorrect arguements, please use " + command + " username numberOfEggs")
+        return
+      }
+      if (typeof Number(stringArray[0]) === 'number' && isNaN(Number(stringArray[1]))) {
+        sendChatMessage("Command in wrong format, please use " + command + " username numberOfEggs")
+        return
+      } else {
+        let eggsToAdd = Number(stringArray[1])
+        let userToUpdate = stringArray[0]
+        await eggUpdateCommand(userToUpdate, eggsToAdd, true)
+        return
+      }
     }
-    if (typeof Number(stringArray[0]) === 'number' && isNaN(Number(stringArray[1]))) {
-      sendChatMessage("Command in wrong format, please use !addeggs username numberOfEggs")
-      return
-    } else {
-      let eggsToAdd = Number(stringArray[1])
-      let userToUpdate = stringArray[0]
-      await eggUpdateCommand(userToUpdate, eggsToAdd, true) //true to test, set to false to not spam chat
+    else {
+      sendChatMessage("Get fucked " + user + ", you're not a mod cmonBruh")
       return
     }
   }
@@ -193,7 +186,8 @@ async function processMessage(user, message) {
 async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
   var getInfoByUser = userEggMap.find(item => item.NameLower === userToUpdate.toLowerCase());
   if (getInfoByUser === undefined) {
-    dbAddEggUser(userToUpdate, eggsToAdd)
+    console.log("User does not exist, add them")
+    await dbAddEggUser(userToUpdate, eggsToAdd)
     printToChat ? sendChatMessage("Updated " + userToUpdate + " with " + eggsToAdd + " eggs, they now have " + eggsToAdd) : null
     userEggMap = await dbGetAllEggs()
     return
@@ -206,7 +200,17 @@ async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
     } else {
       var userEggId = getInfoByUser.ID
       dbUpdateEggs(userEggId, userEggValue)
-      printToChat ? sendChatMessage("Updated " + userToUpdate + " with " + eggsToAdd + " eggs, they now have " + userEggValue) : null
+      if (eggsToAdd === 1) { //because someone will complain otherwise
+        printToChat ? sendChatMessage("Added " + eggsToAdd + " egg, " + userToUpdate + " now has " + userEggValue + " eggs") : null
+      } else if (eggsToAdd > 2) {
+        printToChat ? sendChatMessage("Added " + eggsToAdd + " eggs, " + userToUpdate + " now has " + userEggValue + " eggs") : null
+      } else if (eggsToAdd === -1) { //because someone complained
+        printToChat ? sendChatMessage("Removed " + Math.abs(eggsToAdd) + " egg, " + userToUpdate + " now has " + userEggValue + " eggs") : null
+      } else if (eggsToAdd < 0) {
+        printToChat ? sendChatMessage("Removed " + Math.abs(eggsToAdd) + " eggs, " + userToUpdate + " now has " + userEggValue + " eggs") : null
+      } else {
+        printToChat ? sendChatMessage("Why?") : null
+      }
       userEggMap = await dbGetAllEggs()
       return
     }
@@ -214,17 +218,11 @@ async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
 }
 
 
-async function sendChatMessage(message) {
-  chatClient.say(myChannel, message)
-}
-
-const api = new ApiClient({ authProvider });
-
 async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(async user => {
     const check = await isSub(user.userDisplayName);
-    eggUpdateCommand(user.userDisplayName, check, true)
+    await eggUpdateCommand(user.userDisplayName, check, false) //true to test, set to false to not spam chat
   });
 }
 
@@ -249,7 +247,7 @@ async function isSub(subName) {
   }
 }
 
-setInterval(async function () { await isStreamLive(myChannel) }, 900000);
+setInterval(async function () { await isStreamLive(myChannel) }, eggUpdateInterval);
 
 async function isStreamLive(twitchChannel) {
   const stream = await api.streams.getStreamByUserName({ name: twitchChannel, });
@@ -419,14 +417,14 @@ function processEventSub(event, res) {
 async function actionEventSub(eventTitle, eventUserContent, viewer) {
   if (eventTitle === 'Convert Feed to 100 Eggs') {
     sendChatMessage("!addeggs " + viewer + " 100")
-    await addEggsToUser(100, viewer);
+    await eggUpdateCommand(viewer, 100, true);
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
     sendChatMessage("!addeggs " + viewer + " 2000");
-    await addEggsToUser(2000, viewer);
+    await eggUpdateCommand(viewer, 2000, true);
   } else if (eventTitle === 'Shadow Colour') {
     const colour = {
       type: "redeem",
-      id: "https://www.myinstants.com/media/sounds/unlimited-colors.mp3"
+      id: "redeem/unlimited-colours.mp3"
     }
     await sendWebsocket(colour)
     changeColourEvent(eventUserContent, viewer)
@@ -461,7 +459,7 @@ const runTTS = async (message) => {
     }
   }
 
-  const id = Math.random().toString(36).substring(2, 15);
+  const id = uuidv4();
   fs.writeFile(`/home/html/tts/${id}.mp3`, buffer);
   return id;
 }

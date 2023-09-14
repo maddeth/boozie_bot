@@ -1,0 +1,15 @@
+{
+  "clientId": "",
+  "clientSecret": "",
+  "secret": "",
+  "bearer": "Bearer ",
+  "obsPassword": "",
+  "obsIP": "ws://1.2.3.4:42",
+  "webAddress": "",
+  "tableAccount": "",
+  "tableAccountKey": "",
+  "port": 3000,
+  "webSocketPort": 3001,
+  "myChannel": "",
+  "eggUpdateInterval": 900000
+}
