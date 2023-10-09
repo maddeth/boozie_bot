@@ -12,9 +12,10 @@ import { WebSocketServer } from 'ws';
 import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
-import config from './config.json' assert { type: "json" };;
+import config from './config.json' assert { type: "json" };
+import findRemoveSync from 'find-remove';
 
-const tokenData = JSON.parse(await fs.readFile('./tokens.json', 'UTF-8'));
+const tokenData = JSON.parse(await fs.readFile(`./tokens.json`, 'UTF-8'));
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 
@@ -39,13 +40,10 @@ const authProvider = new RefreshingAuthProvider({
   onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
 }, tokenData);
 
+
 const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
 
 chatClient.connect();
-
-chatClient.onRegister(() => {
-  console.log("Chat Client connected")
-});
 
 async function sendChatMessage(message) {
   chatClient.say(myChannel, message)
@@ -170,13 +168,13 @@ async function processMessage(user, message) {
     }
   }
   if (message.startsWith("!tts")) {
-    var toTts = message.slice(4);
-    var id = await runTTS(toTts)
+    let toTts = message.slice(4);
+    const ttsCreated = await runTTS(toTts);
     const tts = {
       type: "tts",
-      id: id
-    }
-    await sendWebsocket(tts)
+      id: ttsCreated,
+    };
+    await sendWebsocket(tts);
     return
   }
 }
@@ -215,7 +213,6 @@ async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
   }
 }
 
-
 async function getUser() {
   let users = await api.chat.getChatters('30758517', '558612609');
   users.data.forEach(async user => {
@@ -245,19 +242,20 @@ async function isSub(subName) {
   }
 }
 
-setInterval(async function () { await isStreamLive(myChannel) }, eggUpdateInterval);
+setInterval(async function () {
+  await isStreamLive(myChannel);
+  findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3', });
+}, eggUpdateInterval);
 
 async function isStreamLive(twitchChannel) {
   const stream = await api.streams.getStreamByUserName({ name: twitchChannel, });
   if (stream !== null) {
     await getUser();
   } else {
-    console.log("Stream offline")
     await getUser();
+    console.log("Stream offline")
   }
 }
-
-// Express App
 
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
@@ -349,7 +347,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
     },
     "transport": {
       "method": "webhook",
-      "callback": myUrl + "/notification", // If you change the /notification path make sure to also adjust in line 114
+      "callback": myUrl + "/notification",
       "secret": secret
     }
   }
@@ -381,7 +379,6 @@ app.post('/notification', (req, res) => {
   }
 });
 
-//Twitch Event Sub
 function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   let message = messageID + messageTimestamp + body
   let signature = crypto.createHmac('sha256', secret).update(message)
@@ -400,10 +397,11 @@ function readTwitchEventSub(subBody, res) {
 
 function processEventSub(event, res) {
   if (event.header("Twitch-Eventsub-Message-Type") === "notification") {
+    let eventType = event.body.subscription.type
     let newEvent = event.body.event.reward.title
     let userInput = String(event.body.event.user_input)
     let viewerName = event.body.event.user_name
-
+    console.log(viewerName + " " + eventType)
     console.log(viewerName + " redeemed " + "\"" + newEvent + "\"")
     res.send("") // Send a 200 status
 
@@ -415,17 +413,29 @@ function processEventSub(event, res) {
 async function actionEventSub(eventTitle, eventUserContent, viewer) {
   if (eventTitle === 'Convert Feed to 100 Eggs') {
     sendChatMessage("!addeggs " + viewer + " 100")
-    await eggUpdateCommand(viewer, 100, true);
+    await eggUpdateCommand(viewer, 100, false);
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
     sendChatMessage("!addeggs " + viewer + " 2000");
-    await eggUpdateCommand(viewer, 2000, true);
+    await eggUpdateCommand(viewer, 2000, false);
   } else if (eventTitle === 'Shadow Colour') {
-    const colour = {
+    const redeem = {
       type: "redeem",
       id: "redeem/unlimited-colours.mp3"
     }
-    await sendWebsocket(colour)
+    await sendWebsocket(redeem)
     changeColourEvent(eventUserContent, viewer)
+  } else if (eventTitle === 'Stress Less') {
+    const redeem = {
+      type: "redeem",
+      id: "redeem/stress-less.mp3"
+    }
+    await sendWebsocket(redeem)
+  } else if (eventTitle === 'Stop Crouching') {
+    const redeem = {
+      type: "redeem",
+      id: "redeem/mgs-alert-sound.mp3"
+    }
+    await sendWebsocket(redeem)
   }
 }
 
@@ -434,6 +444,7 @@ const ttsStreamElementsHandler = async (text) => {
     const url = `https://api.streamelements.com/kappa/v2/speech?voice=Geraint&text=${encodeURI(text)}`;
     const result = await fetch(url, { method: 'GET', });
     const buffer = await result.buffer();
+    buffer.duration
     return buffer;
   } catch (error) {
     console.error(error);
