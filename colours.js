@@ -23,7 +23,7 @@ async function getRowCount(tableClient) {
   return rowList.length
 }
 
-export async function dbGetAllColours() {
+async function dbGetAllColours() {
   let colourMap = []
   let colourObject = {}
   let entities = colourTableClient.listEntities();
@@ -31,6 +31,22 @@ export async function dbGetAllColours() {
     colourObject = { Name: entity.colourName, Hex: entity.hexCode }
     colourMap.push(colourObject)
   }
+  return colourMap
+}
+
+export async function dbGetRandomColourByName(colourName) {
+  let colourMap = await dbGetAllColours();
+  let filtered = colourMap.filter( colour => colour.Name.toLowerCase().includes(colourName));
+  if (filtered.length > 0)
+  {
+    let randomColour = filtered[Math.floor(Math.random() * filtered.length)]
+    return randomColour.Hex;
+  }
+  return false;
+}
+
+export async function dbGetAllColoursCall() {
+  let colourMap = await dbGetAllColours();
   return JSON.stringify(colourMap)
 }
 

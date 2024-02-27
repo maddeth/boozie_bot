@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import { ApiClient } from '@twurple/api';
 import fetch from 'node-fetch';
 import { WebSocketServer } from 'ws';
-import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
+import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js';
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config.json' assert { type: "json" };
@@ -79,6 +79,20 @@ async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
+  if (colourString.trim().startsWith("random"))
+  {
+    let requestedRandomColour = colourString.replace("random",'').trim();
+    let randomColour = await dbGetRandomColourByName(requestedRandomColour);
+    if (randomColour) {
+      let randomColourName = await dbGetColourByHex(randomColour);
+      if (randomColourName) {
+        sendChatMessage("Your Random Colour is " + randomColourName);
+        sendChatMessage("!addeggs " + viewer + " 4");
+        await changeColour(randomColour);
+        return;
+      }
+    }
+  }
   if (colourString.match(regex)) {
     let colourName = (await dbGetColourByHex(colourString));
     await changeColour(colourString)
@@ -86,7 +100,8 @@ async function changeColourEvent(eventUserContent, viewer) {
       sendChatMessage("According to my list, that colour is " + colourName);
     }
     sendChatMessage("!addeggs " + viewer + " 4");
-  } else if (findHexInDB != null) {
+  }
+  else if (findHexInDB != null) {
     sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!");
     sendChatMessage("!addeggs " + viewer + " 4");
     await changeColour(findHexInDB)
@@ -303,7 +318,7 @@ app.get("/colours", (req, res) => {
 });
 
 app.get("/colour-list.json", async (req, res, next) => {
-  let result = await dbGetAllColours()
+  let result = await dbGetAllColoursCall()
   res.status(200).json(JSON.parse(result))
 });
 
