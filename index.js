@@ -14,8 +14,11 @@ import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config.json' assert { type: "json" };
 import findRemoveSync from 'find-remove';
+import { constants } from 'buffer';
 
-const tokenData = JSON.parse(await fs.readFile(`./tokens.json`, 'UTF-8'));
+const boozieBotUserID = config.boozieBotUserID
+
+const tokenData = JSON.parse(await fs.readFile(`./tokens.${boozieBotUserID}.json`, 'UTF-8'));
 const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
 const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
 
@@ -34,12 +37,16 @@ const eggUpdateInterval = config.eggUpdateInterval; //in milliseconds 900000 sec
 const connectedClients = {};
 const wss = new WebSocketServer({ port: webSocketPort });
 
-const authProvider = new RefreshingAuthProvider({
-  clientId,
-  clientSecret,
-  onRefresh: async newTokenData => await fs.writeFile('./tokens.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
-}, tokenData);
+const authProvider = new RefreshingAuthProvider(
+  {
+    clientId,
+    clientSecret
+  }
+);
 
+authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'));
+
+await authProvider.addUserForToken(tokenData, ['chat']);
 
 const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
 
@@ -115,6 +122,7 @@ async function changeColour(colour) {
   }
 
   await obs.call('SetSourceFilterSettings', { sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject });
+  await obs.call('SetSourceFilterSettings', { sourceName: 'Muse Shadow', filterName: 'colour', filterSettings: myObject });
   await obs.disconnect();
 }
 
@@ -213,49 +221,52 @@ async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
   }
 }
 
-async function getUser() {
-  let users = await api.chat.getChatters('30758517', '558612609');
-  users.data.forEach(async user => {
-    const check = await isSub(user.userDisplayName);
-    await eggUpdateCommand(user.userDisplayName, check, false) //true to test, set to false to not spam chat
-  });
-}
+// async function getUser() {
 
-async function isSub(subName) {
-  const authProvider = new RefreshingAuthProvider(
-    {
-      clientId,
-      clientSecret,
-      onRefresh: async newTokenData => await fs.writeFile('./tokens_me.json', JSON.stringify(newTokenData, null, 4), 'UTF-8')
-    },
-    tokenDataMe
-  );
-  const apiSub = new ApiClient({ authProvider });
-  const subs = await apiSub.subscriptions.getSubscriptionsPaginated('30758517').getAll();
-  const subsData = subs.map(function (sub) {
-    return sub.userDisplayName;
-  });
-  if (subsData.includes(subName)) {
-    return 10;
-  } else {
-    return 5;
-  }
-}
+//   const users = await api.asUser(userId, (ctx) => {
+//     ctx.chat.getChatters('30758517');
+//   });
+//   console.log(users)
+//   // const subs = await api.asUser(userId, async ctx => {
+//   //   await ctx.subscriptions.getSubscriptionsPaginated('30758517').getAll();
+//   // });
+//   // users.data.forEach(async user => {
+//   //   const check = await isSub(user.userDisplayName);
+//   //   await eggUpdateCommand(user.userDisplayName, check, false) //true to test, set to false to not spam chat
+//   // })
+// }
+
+// async function isSub(subName) {
+//   const subs = await apiSub.subscriptions.getSubscriptionsPaginated('30758517').getAll();
+//   const subsData = subs.map(function (sub) {
+//     return sub.userDisplayName;
+//   });
+//   if (subsData.includes(subName)) {
+//     return 10;
+//   } else {
+//     return 5;
+//   }
+// }
 
 setInterval(async function () {
-  await isStreamLive(myChannel);
+  // const stream = await isStreamLive(twitchChannel);
   findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3', });
+  // if (stream !== null) {
+  //   console.log("Stream online" + stream)
+
+  //   // await getUser();
+  // } else {
+  //   console.log("Stream offline")
+  //   // await getUser();
+  // }
 }, eggUpdateInterval);
 
-async function isStreamLive(twitchChannel) {
-  const stream = await api.streams.getStreamByUserName({ name: twitchChannel, });
-  if (stream !== null) {
-    await getUser();
-  } else {
-    await getUser();
-    console.log("Stream offline")
-  }
-}
+// async function isStreamLive(twitchChannel) {
+//   const stream = await api.asUser(userId, (ctx) => {
+//     ctx.channels.getChannelInfoById('84432419');
+//   });
+//   return stream
+// }
 
 app.use(bodyParser.json({
   verify: (req, res, buf) => {

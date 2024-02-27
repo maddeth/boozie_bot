@@ -1,17 +1,17 @@
 {
   "name": "boozie_bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "dependencies": {
-    "@azure/data-tables": "^13.2.1",
-    "@twurple/api": "^5.3.1",
-    "@twurple/auth": "^5.2.7",
-    "@twurple/chat": "^5.2.7",
+    "@azure/data-tables": "^13.2.2",
+    "@twurple/api": "^7.0.10",
+    "@twurple/auth": "^7.0.10",
+    "@twurple/chat": "^7.0.10",
     "express": "^4.18.2",
     "find-remove": "^4.1.0",
-    "obs-websocket-js": "^5.0.2",
-    "sequelize": "^6.28.0",
+    "obs-websocket-js": "^5.0.4",
+    "sequelize": "^6.37.1",
     "uuid": "^9.0.1",
-    "ws": "^8.14.1"
+    "ws": "^8.16.0"
   },
   "description": "bot for twitch",
   "main": "index.js",

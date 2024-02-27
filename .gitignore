@@ -1,7 +1,6 @@
 secret.json
 config.json
-tokens.json
-tokens_me.json
+tokens*.json
 modList.json
 .env
 node_modules/
