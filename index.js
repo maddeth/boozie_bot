@@ -445,20 +445,20 @@ async function actionEventSub(eventTitle, eventUserContent, viewer) {
       type: "redeem",
       id: "redeem/unlimited-colours.mp3"
     }
-    await sendWebsocket(redeem)
+    sendWebsocket(redeem)
     changeColourEvent(eventUserContent, viewer)
   } else if (eventTitle === 'Stress Less') {
     const redeem = {
       type: "redeem",
       id: "redeem/stress-less.mp3"
     }
-    await sendWebsocket(redeem)
+    sendWebsocket(redeem)
   } else if (eventTitle === 'Stop Crouching') {
     const redeem = {
       type: "redeem",
       id: "redeem/mgs-alert-sound.mp3"
     }
-    await sendWebsocket(redeem)
+    sendWebsocket(redeem)
   }
 }
 
