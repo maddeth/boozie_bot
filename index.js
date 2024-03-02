@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import { ApiClient } from '@twurple/api';
 import fetch from 'node-fetch';
 import { WebSocketServer } from 'ws';
-import { dbAddColour, dbGetAllColours, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount } from './colours.js';
+import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js';
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config.json' assert { type: "json" };
@@ -37,12 +37,10 @@ const eggUpdateInterval = config.eggUpdateInterval; //in milliseconds 900000 sec
 const connectedClients = {};
 const wss = new WebSocketServer({ port: webSocketPort });
 
-const authProvider = new RefreshingAuthProvider(
-  {
-    clientId,
-    clientSecret
-  }
-);
+const authProvider = new RefreshingAuthProvider({
+  clientId,
+  clientSecret
+});
 
 authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'));
 
@@ -52,7 +50,7 @@ const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
 
 chatClient.connect();
 
-async function sendChatMessage(message) {
+function sendChatMessage(message) {
   chatClient.say(myChannel, message)
 }
 
@@ -75,10 +73,27 @@ function isBotMod(modName) {
 const obs = new OBSWebSocket();
 const app = express();
 
+async function randomColour(colourString, viewer) {
+  let requestedRandomColour = colourString.replace("random", '').trim()
+  let randomColour = await dbGetRandomColourByName(requestedRandomColour)
+  if (randomColour) {
+    let randomColourName = await dbGetColourByHex(randomColour)
+    if (randomColourName) {
+      sendChatMessage("Your Random Colour is " + randomColourName)
+      sendChatMessage("!addeggs " + viewer + " 4");
+      await changeColour(randomColour)
+    }
+  }
+}
+
 async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
+  if (colourString.trim().startsWith("random")) {
+    await randomColour(colourString, viewer)
+    return
+  }
   if (colourString.match(regex)) {
     let colourName = (await dbGetColourByHex(colourString));
     await changeColour(colourString)
@@ -86,7 +101,8 @@ async function changeColourEvent(eventUserContent, viewer) {
       sendChatMessage("According to my list, that colour is " + colourName);
     }
     sendChatMessage("!addeggs " + viewer + " 4");
-  } else if (findHexInDB != null) {
+  }
+  else if (findHexInDB != null) {
     sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!");
     sendChatMessage("!addeggs " + viewer + " 4");
     await changeColour(findHexInDB)
@@ -100,12 +116,7 @@ async function changeColourEvent(eventUserContent, viewer) {
 
 async function changeColour(colour) {
   try {
-    const {
-      obsWebSocketVersion,
-      negotiatedRpcVersion
-    } = await obs.connect(obsIP, obsPassword, {
-      rpcVersion: 1
-    });
+    const { obsWebSocketVersion, negotiatedRpcVersion } = await obs.connect(obsIP, obsPassword, { rpcVersion: 1 });
     console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
   } catch (error) {
     console.error('Failed to connect', error.code, error.message);
@@ -126,7 +137,7 @@ async function changeColour(colour) {
   await obs.disconnect();
 }
 
-async function sendWebsocket(data) {
+function sendWebsocket(data) {
   for (const client in connectedClients) {
     if (connectedClients[client]) {
       connectedClients[client].send(JSON.stringify(data));
@@ -303,7 +314,7 @@ app.get("/colours", (req, res) => {
 });
 
 app.get("/colour-list.json", async (req, res, next) => {
-  let result = await dbGetAllColours()
+  let result = await dbGetAllColoursCall()
   res.status(200).json(JSON.parse(result))
 });
 
@@ -402,6 +413,7 @@ function readTwitchEventSub(subBody, res) {
   if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
     subBody.send(subBody.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
   } else {
+    console.log(subBody, " + ", res)
     processEventSub(subBody, res)
   }
 }
