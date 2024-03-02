@@ -193,7 +193,7 @@ async function processMessage(user, message) {
       type: "tts",
       id: ttsCreated,
     };
-    await sendWebsocket(tts);
+    sendWebsocket(tts);
     return
   }
 }
@@ -413,7 +413,6 @@ function readTwitchEventSub(subBody, res) {
   if (subBody.header("Twitch-Eventsub-Message-Type") === "webhook_callback_verification") {
     subBody.send(subBody.body.challenge) // Returning a 200 status with the received challenge to complete webhook creation flow
   } else {
-    console.log(subBody, " + ", res)
     processEventSub(subBody, res)
   }
 }
