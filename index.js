@@ -37,10 +37,12 @@ const eggUpdateInterval = config.eggUpdateInterval; //in milliseconds 900000 sec
 const connectedClients = {};
 const wss = new WebSocketServer({ port: webSocketPort });
 
-const authProvider = new RefreshingAuthProvider({
-  clientId,
-  clientSecret
-});
+const authProvider = new RefreshingAuthProvider(
+  {
+    clientId,
+    clientSecret
+  }
+);
 
 authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'));
 
@@ -50,7 +52,7 @@ const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
 
 chatClient.connect();
 
-function sendChatMessage(message) {
+async function sendChatMessage(message) {
   chatClient.say(myChannel, message)
 }
 
@@ -73,26 +75,23 @@ function isBotMod(modName) {
 const obs = new OBSWebSocket();
 const app = express();
 
-async function randomColour(colourString, viewer) {
-  let requestedRandomColour = colourString.replace("random", '').trim()
-  let randomColour = await dbGetRandomColourByName(requestedRandomColour)
-  if (randomColour) {
-    let randomColourName = await dbGetColourByHex(randomColour)
-    if (randomColourName) {
-      sendChatMessage("Your Random Colour is " + randomColourName)
-      sendChatMessage("!addeggs " + viewer + " 4");
-      await changeColour(randomColour)
-    }
-  }
-}
-
 async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
-  if (colourString.trim().startsWith("random")) {
-    await randomColour(colourString, viewer)
-    return
+  if (colourString.trim().startsWith("random"))
+  {
+    let requestedRandomColour = colourString.replace("random",'').trim();
+    let randomColour = await dbGetRandomColourByName(requestedRandomColour);
+    if (randomColour) {
+      let randomColourName = await dbGetColourByHex(randomColour);
+      if (randomColourName) {
+        sendChatMessage("Your Random Colour is " + randomColourName);
+        sendChatMessage("!addeggs " + viewer + " 4");
+        await changeColour(randomColour);
+        return;
+      }
+    }
   }
   if (colourString.match(regex)) {
     let colourName = (await dbGetColourByHex(colourString));
@@ -116,7 +115,12 @@ async function changeColourEvent(eventUserContent, viewer) {
 
 async function changeColour(colour) {
   try {
-    const { obsWebSocketVersion, negotiatedRpcVersion } = await obs.connect(obsIP, obsPassword, { rpcVersion: 1 });
+    const {
+      obsWebSocketVersion,
+      negotiatedRpcVersion
+    } = await obs.connect(obsIP, obsPassword, {
+      rpcVersion: 1
+    });
     console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
   } catch (error) {
     console.error('Failed to connect', error.code, error.message);
@@ -137,7 +141,7 @@ async function changeColour(colour) {
   await obs.disconnect();
 }
 
-function sendWebsocket(data) {
+async function sendWebsocket(data) {
   for (const client in connectedClients) {
     if (connectedClients[client]) {
       connectedClients[client].send(JSON.stringify(data));
@@ -193,7 +197,7 @@ async function processMessage(user, message) {
       type: "tts",
       id: ttsCreated,
     };
-    sendWebsocket(tts);
+    await sendWebsocket(tts);
     return
   }
 }
@@ -444,20 +448,20 @@ async function actionEventSub(eventTitle, eventUserContent, viewer) {
       type: "redeem",
       id: "redeem/unlimited-colours.mp3"
     }
-    sendWebsocket(redeem)
+    await sendWebsocket(redeem)
     changeColourEvent(eventUserContent, viewer)
   } else if (eventTitle === 'Stress Less') {
     const redeem = {
       type: "redeem",
       id: "redeem/stress-less.mp3"
     }
-    sendWebsocket(redeem)
+    await sendWebsocket(redeem)
   } else if (eventTitle === 'Stop Crouching') {
     const redeem = {
       type: "redeem",
       id: "redeem/mgs-alert-sound.mp3"
     }
-    sendWebsocket(redeem)
+    await sendWebsocket(redeem)
   }
 }
 
