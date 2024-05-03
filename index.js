@@ -12,7 +12,7 @@ import { WebSocketServer } from 'ws';
 import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js';
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
 import { v4 as uuidv4 } from 'uuid';
-import config from './config.json' assert { type: "json" };
+import config from './config.json' with { type: "json" };
 import findRemoveSync from 'find-remove';
 import { constants } from 'buffer';
 
@@ -79,9 +79,8 @@ async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
   let regex = /[0-9A-Fa-f]{6}/g;
   let findHexInDB = await dbGetHex(colourString)
-  if (colourString.trim().startsWith("random"))
-  {
-    let requestedRandomColour = colourString.replace("random",'').trim();
+  if (colourString.trim().startsWith("random")) {
+    let requestedRandomColour = colourString.replace("random", '').trim();
     let randomColour = await dbGetRandomColourByName(requestedRandomColour);
     if (randomColour) {
       let randomColourName = await dbGetColourByHex(randomColour);
