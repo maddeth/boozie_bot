@@ -199,6 +199,9 @@ async function processMessage(user, message) {
     await sendWebsocket(tts);
     return
   }
+  if (message.startsWith("!drink")) {
+    sendChatMessage("@StreamElements is a liar")
+  }
 }
 
 async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
