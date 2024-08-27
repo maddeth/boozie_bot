@@ -36,9 +36,8 @@ async function dbGetAllColours() {
 
 export async function dbGetRandomColourByName(colourName) {
   let colourMap = await dbGetAllColours();
-  let filtered = colourMap.filter( colour => colour.Name.toLowerCase().includes(colourName));
-  if (filtered.length > 0)
-  {
+  let filtered = colourMap.filter(colour => colour.Name.toLowerCase().includes(colourName));
+  if (filtered.length > 0) {
     let randomColour = filtered[Math.floor(Math.random() * filtered.length)]
     return randomColour.Hex;
   }

@@ -35,14 +35,18 @@ export async function dbCheckUserExists(userName) {
   }
 }
 
-export async function dbGetEggs(userId) {
-  let entity = await eggTableClient.getEntity("egg", userId);
-  let userData = {
-    userName: entity.userName,
-    eggsAmount: entity.eggsAmount
-  };
-  // return object of username and eggs amount
-  return userData;
+export async function dbGetEggs(userName) {
+  let entities = eggTableClient.listEntities({
+    queryOptions: { filter: odata`userNameSanitised eq ${userName.toLowerCase()}` }
+  });
+  for await (const entity of entities) {
+    let userData = {
+      userName: entity.userName,
+      eggsAmount: entity.eggsAmount,
+      userId: entity.rowKey
+    };
+    return userData;
+  }
 }
 
 export async function dbAddEggUser(userName, eggAmount) {

@@ -1,114 +1,109 @@
-import bodyParser from 'body-parser';
-import { ChatClient } from '@twurple/chat';
-import crypto from 'crypto';
-import express from 'express';
-import https from 'https';
-import OBSWebSocket from 'obs-websocket-js';
-import { RefreshingAuthProvider } from '@twurple/auth';
-import { promises as fs } from 'fs';
-import { ApiClient } from '@twurple/api';
-import fetch from 'node-fetch';
-import { WebSocketServer } from 'ws';
-import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js';
-import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser } from './eggs.js';
-import { v4 as uuidv4 } from 'uuid';
-import config from './config.json' assert { type: "json" };
-import findRemoveSync from 'find-remove';
-import { constants } from 'buffer';
+import bodyParser from 'body-parser'
+import { ChatClient } from '@twurple/chat'
+import crypto from 'crypto'
+import express from 'express'
+import https from 'https'
+import OBSWebSocket from 'obs-websocket-js'
+import { RefreshingAuthProvider } from '@twurple/auth'
+import { promises as fs } from 'fs'
+import { ApiClient } from '@twurple/api'
+import fetch from 'node-fetch'
+import { WebSocketServer } from 'ws'
+import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js'
+import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser, dbGetEggs } from './eggs.js'
+import { v4 as uuidv4 } from 'uuid'
+import config from './config.json' with { type: "json" }
+import findRemoveSync from 'find-remove'
+import { subLookup } from './getSubs.js'
 
 const boozieBotUserID = config.boozieBotUserID
+const streamerID = config.myChannelUserId
 
-const tokenData = JSON.parse(await fs.readFile(`./tokens.${boozieBotUserID}.json`, 'UTF-8'));
-const tokenDataMe = JSON.parse(await fs.readFile('./tokens_me.json', 'UTF-8'));
-const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'));
+// const tokenData = JSON.parse(await fs.readFile(`./tokens.${streamerID}.json`, 'UTF-8'))
+const tokenData = JSON.parse(await fs.readFile(`./tokens.${boozieBotUserID}.json`, 'UTF-8'))
+const modlist = JSON.parse(await fs.readFile('./modList.json', 'UTF-8'))
 
-const clientId = config.clientId;
-const clientSecret = config.clientSecret;
-const bearerToken = config.bearer;
-const secret = config.secret;
-const obsPassword = config.obsPassword;
-const obsIP = config.obsIP;
-const myUrl = config.webAddress;
-const port = config.port;
-const webSocketPort = config.webSocketPort;
-const myChannel = config.myChannel;
-const eggUpdateInterval = config.eggUpdateInterval; //in milliseconds 900000 seconds is 15 minutes
+const clientId = config.clientId
+const clientSecret = config.clientSecret
+const bearerToken = config.bearer
+const secret = config.secret
+const obsPassword = config.obsPassword
+const obsIP = config.obsIP
+const myUrl = config.webAddress
+const port = config.port
+const webSocketPort = config.webSocketPort
+const myChannel = config.myChannel
+const eggUpdateInterval = config.eggUpdateInterval //in milliseconds 900000 seconds is 15 minutes
+const connectedClients = {}
+const wss = new WebSocketServer({ port: webSocketPort })
+const authProvider = new RefreshingAuthProvider({ clientId, clientSecret })
+const defaultEggs = 5
 
-const connectedClients = {};
-const wss = new WebSocketServer({ port: webSocketPort });
+// authProvider.onRefresh(async (streamerID, newTokenData) => await fs.writeFile(`./tokens.${streamerID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'))
+authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'))
 
-const authProvider = new RefreshingAuthProvider(
-  {
-    clientId,
-    clientSecret
-  }
-);
+await authProvider.addUserForToken(tokenData, ['chat'])
+await authProvider.addUserForToken(tokenData, ['user:read:subscriptions'])
 
-authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'));
+const chatClient = new ChatClient({ authProvider, channels: [myChannel] })
+const api = new ApiClient({ authProvider })
 
-await authProvider.addUserForToken(tokenData, ['chat']);
-
-const chatClient = new ChatClient({ authProvider, channels: [myChannel] });
-
-chatClient.connect();
+chatClient.connect()
 
 async function sendChatMessage(message) {
   chatClient.say(myChannel, message)
 }
 
-const api = new ApiClient({ authProvider });
-
-let userEggMap = await dbGetAllEggs()
-
 wss.on('connection', function connection(ws) {
-  const clientId = uuidv4();
-  connectedClients[clientId] = ws;
+  const clientId = uuidv4()
+  connectedClients[clientId] = ws
   ws.on('message', function message(data) {
-    console.log(clientId + ' %s', data);
-  });
-});
+    console.log(clientId + ' %s', data)
+  })
+})
 
 function isBotMod(modName) {
-  return modlist.includes(modName);
+  return modlist.includes(modName)
 }
 
-const obs = new OBSWebSocket();
-const app = express();
+const obs = new OBSWebSocket()
+const app = express()
 
 async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
-  let regex = /[0-9A-Fa-f]{6}/g;
+  let regex = /[0-9A-Fa-f]{6}/g
   let findHexInDB = await dbGetHex(colourString)
-  if (colourString.trim().startsWith("random"))
-  {
-    let requestedRandomColour = colourString.replace("random",'').trim();
-    let randomColour = await dbGetRandomColourByName(requestedRandomColour);
+  if (colourString.trim().startsWith("random")) {
+    let requestedRandomColour = colourString.replace("random", '').trim()
+    let randomColour = await dbGetRandomColourByName(requestedRandomColour)
     if (randomColour) {
-      let randomColourName = await dbGetColourByHex(randomColour);
+      let randomColourName = await dbGetColourByHex(randomColour)
       if (randomColourName) {
-        sendChatMessage("Your Random Colour is " + randomColourName);
-        sendChatMessage("!addeggs " + viewer + " 4");
-        await changeColour(randomColour);
-        return;
+        sendChatMessage("Your Random Colour is " + randomColourName)
+        sendChatMessage("!addeggs " + viewer + " 4")
+        await changeColour(randomColour)
+        return
+      } else {
+        console.log("Error: No random colour produced")
       }
     }
   }
   if (colourString.match(regex)) {
-    let colourName = (await dbGetColourByHex(colourString));
+    let colourName = (await dbGetColourByHex(colourString))
     await changeColour(colourString)
     if (colourName) {
-      sendChatMessage("According to my list, that colour is " + colourName);
+      sendChatMessage("According to my list, that colour is " + colourName)
     }
-    sendChatMessage("!addeggs " + viewer + " 4");
+    sendChatMessage("!addeggs " + viewer + " 4")
   }
   else if (findHexInDB != null) {
-    sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!");
-    sendChatMessage("!addeggs " + viewer + " 4");
+    sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!")
+    sendChatMessage("!addeggs " + viewer + " 4")
     await changeColour(findHexInDB)
   } else {
-    const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6);
-    let randoColour = await dbGetColourByHex(randomString);
-    sendChatMessage("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString));
+    const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6)
+    let randoColour = await dbGetColourByHex(randomString)
+    sendChatMessage("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString))
     await changeColour(randomString)
   }
 }
@@ -120,56 +115,60 @@ async function changeColour(colour) {
       negotiatedRpcVersion
     } = await obs.connect(obsIP, obsPassword, {
       rpcVersion: 1
-    });
+    })
     console.log(`Connected to server ${obsWebSocketVersion} (using RPC ${negotiatedRpcVersion})`)
   } catch (error) {
-    console.error('Failed to connect', error.code, error.message);
+    console.error('Failed to connect', error.code, error.message)
   }
 
-  const hexToDecimal = hex => parseInt(hex, 16);
+  const hexToDecimal = hex => parseInt(hex, 16)
   let arrayOfHex = colour.match(/.{1,2}/g)
   let obsHexOrder = arrayOfHex.reverse().join("")
   let finalHex = "ff" + obsHexOrder
-  const obsDecimalColour = hexToDecimal(finalHex);
+  const obsDecimalColour = hexToDecimal(finalHex)
 
   let myObject = {
     color: obsDecimalColour
   }
 
-  await obs.call('SetSourceFilterSettings', { sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject });
-  await obs.call('SetSourceFilterSettings', { sourceName: 'Muse Shadow', filterName: 'colour', filterSettings: myObject });
-  await obs.disconnect();
+  await obs.call('SetSourceFilterSettings', { sourceName: 'Webcam shadow', filterName: 'colour', filterSettings: myObject })
+  await obs.call('SetSourceFilterSettings', { sourceName: 'Muse Shadow', filterName: 'colour', filterSettings: myObject })
+  await obs.disconnect()
 }
 
 async function sendWebsocket(data) {
   for (const client in connectedClients) {
     if (connectedClients[client]) {
-      connectedClients[client].send(JSON.stringify(data));
+      connectedClients[client].send(JSON.stringify(data))
     }
   }
 }
 
 chatClient.onMessage(async (myChannel, user, message) => {
   await processMessage(user, message)
-});
+})
 
 async function processMessage(user, message) {
   let unformattedMessage = message
   message = message.toLowerCase()
   if (message.startsWith("!colourlist") || message.startsWith("!colorlist") || message.startsWith("!colours")) {
-    sendChatMessage(user + " - you can find the colour list here " + myUrl + "/colours");
+    sendChatMessage(user + " - you can find the colour list here " + myUrl + "/colours")
     return
   }
   if (message.startsWith("!test")) {
-    sendChatMessage(user + "icles");
+    sendChatMessage(user + "icles")
+    return
+  }
+  if (message.startsWith("!list")) {
+    console.log(chatters)
     return
   }
   if (message.startsWith("!eggstest")) {
     if (isBotMod(user)) {
       var messageBody = unformattedMessage.slice(9)
       var command = unformattedMessage.slice(-9)
-      var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g);
-      stringArray = stringArray.filter(item => item.trim() !== '');
+      var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g)
+      stringArray = stringArray.filter(item => item.trim() !== '')
 
       if (stringArray.length != 2) {
         sendChatMessage("Incorrect arguements, please use " + command + " username numberOfEggs")
@@ -191,33 +190,43 @@ async function processMessage(user, message) {
     }
   }
   if (message.startsWith("!tts")) {
-    let toTts = message.slice(4);
-    const ttsCreated = await runTTS(toTts);
+    let toTts = message.slice(4)
+    const ttsCreated = await runTTS(toTts)
     const tts = {
       type: "tts",
       id: ttsCreated,
-    };
-    await sendWebsocket(tts);
+    }
+    await sendWebsocket(tts)
     return
   }
+
+  //if (message.match(/(?:27[., ][5])/g)) {
+  //  sendChatMessage("The reason I do 27.5 hour streams: I usually start my Friday stream at 7pm, and finish my Saturday stream at 10:30pm. So I start at my normal time on a Friday and finish at my normal time on a Saturday")
+  //  return
+  //}
 }
 
 async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
-  var getInfoByUser = userEggMap.find(item => item.NameLower === userToUpdate.toLowerCase());
+  const getInfoByUser = await dbGetEggs(userToUpdate)
+  // console.log(getInfoByUser)
+  // const userEggMap = await dbGetEggs(userToUpdate.toLowerCase())
+  // var getInfoByUser = userEggMap.find(item => item.NameLower === userToUpdate.toLowerCase())
   if (getInfoByUser === undefined) {
     console.log("User does not exist, add them")
     await dbAddEggUser(userToUpdate, eggsToAdd)
     printToChat ? sendChatMessage("Updated " + userToUpdate + " with " + eggsToAdd + " eggs, they now have " + eggsToAdd) : null
-    userEggMap = await dbGetAllEggs()
+    // userEggMap = await dbGetAllEggs()
     return
   } else {
-    var userEggValue = Number(getInfoByUser.Eggs) + eggsToAdd
+    // console.log(getInfoByUser.eggsAmount, eggsToAdd)
+    var userEggValue = Number(getInfoByUser.eggsAmount) + Number(eggsToAdd)
+    // console.log(userEggValue + " being added to " + userToUpdate)
     if (userEggValue < 0) {
       sendChatMessage("you don't have enough eggs")
-      userEggMap = await dbGetAllEggs()
+      // userEggMap = await dbGetAllEggs()
       return
     } else {
-      var userEggId = getInfoByUser.ID
+      var userEggId = getInfoByUser.userId
       dbUpdateEggs(userEggId, userEggValue)
       if (eggsToAdd === 1) { //because someone will complain otherwise
         printToChat ? sendChatMessage("Added " + eggsToAdd + " egg, " + userToUpdate + " now has " + userEggValue + " eggs") : null
@@ -230,107 +239,111 @@ async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat) {
       } else {
         printToChat ? sendChatMessage("Why?") : null
       }
-      userEggMap = await dbGetAllEggs()
+      // userEggMap = await dbGetAllEggs()
       return
     }
   }
 }
 
-// async function getUser() {
+const chatters = await api.asUser(boozieBotUserID, async ctx => {
+  const viewerList = new Map()
+  const viewers = await ctx.chat.getChatters(streamerID)
+  for (let viewerArray = 0; viewerArray < viewers.total; viewerArray++) {
+    viewerList.set(viewers.data[viewerArray].userDisplayName, viewers.data[viewerArray].userId)
+  }
+  return viewerList
+})
 
-//   const users = await api.asUser(userId, (ctx) => {
-//     ctx.chat.getChatters('30758517');
-//   });
-//   console.log(users)
-//   // const subs = await api.asUser(userId, async ctx => {
-//   //   await ctx.subscriptions.getSubscriptionsPaginated('30758517').getAll();
-//   // });
-//   // users.data.forEach(async user => {
-//   //   const check = await isSub(user.userDisplayName);
-//   //   await eggUpdateCommand(user.userDisplayName, check, false) //true to test, set to false to not spam chat
-//   // })
-// }
+async function isStreamLive(streamer) {
+  const checkStream = await api.streams.getStreamByUserId(streamer);
+  if (checkStream != null) {
+    return checkStream.type
+  } else {
+    return false
+  }
+}
 
-// async function isSub(subName) {
-//   const subs = await apiSub.subscriptions.getSubscriptionsPaginated('30758517').getAll();
-//   const subsData = subs.map(function (sub) {
-//     return sub.userDisplayName;
-//   });
-//   if (subsData.includes(subName)) {
-//     return 10;
-//   } else {
-//     return 5;
-//   }
-// }
+if (await isStreamLive(streamerID)) {
+  console.log("Stream online")
+} else {
+  console.log("Stream offline")
+}
 
 setInterval(async function () {
-  // const stream = await isStreamLive(twitchChannel);
-  findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3', });
-  // if (stream !== null) {
-  //   console.log("Stream online" + stream)
-
-  //   // await getUser();
-  // } else {
-  //   console.log("Stream offline")
-  //   // await getUser();
-  // }
-}, eggUpdateInterval);
-
-// async function isStreamLive(twitchChannel) {
-//   const stream = await api.asUser(userId, (ctx) => {
-//     ctx.channels.getChannelInfoById('84432419');
-//   });
-//   return stream
-// }
+  const stream = await isStreamLive(streamerID)
+  findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3', })
+  if (stream) {
+    console.log("Stream online")
+    let eggsToAdd = defaultEggs
+    for (const [viewerName, viewerId] of chatters) {
+      let checkSub = await subLookup(viewerName, viewerId)
+      if (checkSub == 1) {
+        eggsToAdd = defaultEggs * 2
+        await eggUpdateCommand(viewerName, eggsToAdd, false)
+      } else if (checkSub == 2) {
+        eggsToAdd = defaultEggs * 3
+        await eggUpdateCommand(viewerName, eggsToAdd, false)
+      } else if (checkSub == 3) {
+        eggsToAdd = defaultEggs * 4
+        await eggUpdateCommand(viewerName, eggsToAdd, false)
+      } else {
+        eggsToAdd = defaultEggs
+        await eggUpdateCommand(viewerName, eggsToAdd, false)
+      }
+    }
+  } else {
+    console.log("Stream offline")
+  }
+}, eggUpdateInterval)
 
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
     req.rawBody = buf
   }
-}));
+}))
 
 app.listen(port, () => {
   console.log(`Twitch Webhook listening at http://localhost:${port}`)
-});
+})
 
 app.get('/', (req, res) => {
-  res.redirect(301, 'https://www.twitch.tv/maddeth');
-});
+  res.redirect(301, 'https://www.twitch.tv/maddeth')
+})
 
 app.get('/add-colour', (req, res) => {
   res.sendFile("/home/html/form.html")
   res.status(200)
-});
+})
 
 app.get('/my.css', (req, res) => {
   res.sendFile("/home/html/my.css")
   res.status(200)
-});
+})
 
 app.get("/colours/:id", async (req, res, next) => {
   let result = await dbGetColour(req.params.id)
-  res.status(200).json(result);
-});
+  res.status(200).json(result)
+})
 
 app.get("/colours", (req, res) => {
   res.sendFile("/home/html/colourlist.html")
   res.status(200)
-});
+})
 
 app.get("/colour-list.json", async (req, res, next) => {
   let result = await dbGetAllColoursCall()
   res.status(200).json(JSON.parse(result))
-});
+})
 
 app.get('/tts/:id', (req, res) => {
   let audioFilePath = `/home/html/tts/${req.params.id}.mp3`
-  res.sendFile(audioFilePath);
-});
+  res.sendFile(audioFilePath)
+})
 
 // TODO: rewrite this
 app.post("/colours/", async (req, res, next) => {
-  let reqBody = req.body;
-  let regex = /[0-9A-Fa-f]{6}/g;
+  let reqBody = req.body
+  let regex = /[0-9A-Fa-f]{6}/g
   let newHex = reqBody.hex_code
   let newColour = String(reqBody.colour_name)
   console.log(newColour)
@@ -351,7 +364,7 @@ app.post("/colours/", async (req, res, next) => {
       "error": "Colour " + newColour + ", hex " + newHex + "not added"
     })
   }
-});
+})
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
   let createWebHookParams = {
@@ -392,7 +405,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
   webhookReq.on('error', (e) => { console.log("Webhook Request Error:" + e) })
   webhookReq.write(JSON.stringify(createWebHookBody))
   webhookReq.end()
-});
+})
 
 app.post('/notification', (req, res) => {
   if (!verifySignature(req.header("Twitch-Eventsub-Message-Signature"),
@@ -403,7 +416,7 @@ app.post('/notification', (req, res) => {
   } else {
     readTwitchEventSub(req, res)
   }
-});
+})
 
 function verifySignature(messageSignature, messageID, messageTimestamp, body) {
   let message = messageID + messageTimestamp + body
@@ -439,10 +452,10 @@ function processEventSub(event, res) {
 async function actionEventSub(eventTitle, eventUserContent, viewer) {
   if (eventTitle === 'Convert Feed to 100 Eggs') {
     sendChatMessage("!addeggs " + viewer + " 100")
-    await eggUpdateCommand(viewer, 100, false);
+    await eggUpdateCommand(viewer, 100, false)
   } else if (eventTitle === 'Convert Feed to 2000 Eggs') {
-    sendChatMessage("!addeggs " + viewer + " 2000");
-    await eggUpdateCommand(viewer, 2000, false);
+    sendChatMessage("!addeggs " + viewer + " 2000")
+    await eggUpdateCommand(viewer, 2000, false)
   } else if (eventTitle === 'Shadow Colour') {
     const redeem = {
       type: "redeem",
@@ -467,34 +480,34 @@ async function actionEventSub(eventTitle, eventUserContent, viewer) {
 
 const ttsStreamElementsHandler = async (text) => {
   try {
-    const url = `https://api.streamelements.com/kappa/v2/speech?voice=Geraint&text=${encodeURI(text)}`;
-    const result = await fetch(url, { method: 'GET', });
-    const buffer = await result.buffer();
+    const url = `https://api.streamelements.com/kappa/v2/speech?voice=Geraint&text=${encodeURI(text)}`
+    const result = await fetch(url, { method: 'GET', })
+    const buffer = await result.buffer()
     buffer.duration
-    return buffer;
+    return buffer
   } catch (error) {
-    console.error(error);
+    console.error(error)
   }
-  return null;
-};
+  return null
+}
 
 async function getVoiceBuffer(text) {
-  const buffer = await ttsStreamElementsHandler(text);
-  return buffer;
+  const buffer = await ttsStreamElementsHandler(text)
+  return buffer
 }
 
 const runTTS = async (message) => {
-  let currentMessage = message;
-  let buffer = Buffer.from([]);
+  let currentMessage = message
+  let buffer = Buffer.from([])
 
   if (currentMessage.length > 0) {
-    const result = await getVoiceBuffer(currentMessage);
+    const result = await getVoiceBuffer(currentMessage)
     if (result) {
-      buffer = Buffer.concat([buffer, result]);
+      buffer = Buffer.concat([buffer, result])
     }
   }
 
-  const id = uuidv4();
-  fs.writeFile(`/home/html/tts/${id}.mp3`, buffer);
-  return id;
+  const id = uuidv4()
+  fs.writeFile(`/home/html/tts/${id}.mp3`, buffer)
+  return id
 }
