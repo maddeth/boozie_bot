@@ -9,13 +9,15 @@ import { promises as fs } from 'fs'
 import { ApiClient } from '@twurple/api'
 import fetch from 'node-fetch'
 import { WebSocketServer } from 'ws'
-import { dbAddColour, dbGetAllColoursCall, dbGetColourByHex, dbGetHex, dbGetColour, coloursRowCount, dbGetRandomColourByName } from './colours.js'
+import { getAllColours, coloursRowCount2, getByColourName, getColourByHex, getById, getByUserName, getLastColour, getHexByColourName, getSpecificColourById, addColour, getRandomColourByName } from './colours2.js'
 import { dbGetAllEggs, dbUpdateEggs, dbAddEggUser, dbGetEggs } from './eggs.js'
 import { v4 as uuidv4 } from 'uuid'
 import config from './config.json' with { type: "json" }
 import findRemoveSync from 'find-remove'
-import { subLookup } from './getSubs.js'
+import pkg from 'jsonwebtoken'
+// import { subLookup } from './getSubs.js'
 
+const jwt = pkg
 const boozieBotUserID = config.boozieBotUserID
 const streamerID = config.myChannelUserId
 
@@ -69,40 +71,62 @@ function isBotMod(modName) {
 const obs = new OBSWebSocket()
 const app = express()
 
+
 async function changeColourEvent(eventUserContent, viewer) {
   let colourString = eventUserContent.replace(/#/g, '').toLowerCase()
+  console.log(colourString)
   let regex = /[0-9A-Fa-f]{6}/g
-  let findHexInDB = await dbGetHex(colourString)
+
+  let findHexInDB = await getHexByColourName(colourString)
+  console.log(findHexInDB)
+
   if (colourString.trim().startsWith("random")) {
     let requestedRandomColour = colourString.replace("random", '').trim()
-    let randomColour = await dbGetRandomColourByName(requestedRandomColour)
+    let randomColour = await getRandomColourByName(requestedRandomColour)
     if (randomColour) {
-      let randomColourName = await dbGetColourByHex(randomColour)
-      if (randomColourName) {
-        sendChatMessage("Your Random Colour is " + randomColourName)
+      let randomColourHex = await getHexByColourName(randomColour)
+      if (randomColourHex) {
+        sendChatMessage("Your Random Colour is " + randomColour)
         sendChatMessage("!addeggs " + viewer + " 4")
-        await changeColour(randomColour)
+        await changeColour(randomColourHex)
         return
       } else {
         console.log("Error: No random colour produced")
       }
     }
   }
+  if (colourString.trim().includes(" or ")) {
+    let colourStringArray = colourString.split(' or ').join(',').split(',')
+    let selectRandomColour = colourStringArray[Math.floor(Math.random() * colourStringArray.length)]
+    let selectedColour = await getHexByColourName(selectRandomColour.trim())
+    if (selectedColour.length > 0) {
+      sendChatMessage("Your Selected Colour is " + selectRandomColour)
+      sendChatMessage("!addeggs " + viewer + " 4")
+      await changeColour(selectedColour[0].hex_value)
+      return
+    } else {
+      console.log("Error: No random colour produced")
+    }
+  }
   if (colourString.match(regex)) {
-    let colourName = (await dbGetColourByHex(colourString))
+    let colourName = await getColourByHex(colourString.toUpperCase())
+    console.log(colourName)
     await changeColour(colourString)
-    if (colourName) {
-      sendChatMessage("According to my list, that colour is " + colourName)
+    if (colourName.length > 0) {
+      let colours = colourName.map(colour => colour.colourname).join(', ')
+      sendChatMessage("According to my list, that colour is " + colours)
     }
     sendChatMessage("!addeggs " + viewer + " 4")
+    return
   }
-  else if (findHexInDB != null) {
+  else if (findHexInDB.length > 0) {
     sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!")
     sendChatMessage("!addeggs " + viewer + " 4")
-    await changeColour(findHexInDB)
+    await changeColour(findHexInDB[0].hex_value)
   } else {
-    const randomString = crypto.randomBytes(8).toString("hex").substring(0, 6)
-    let randoColour = await dbGetColourByHex(randomString)
+    let randomString = crypto.randomBytes(8).toString("hex").substring(0, 6)
+    console.log(randomString)
+    let randoColour = await getColourByHex(randomString)
     sendChatMessage("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + (randoColour ? "Hex: " + randomString + " Colours: " + randoColour : randomString))
     await changeColour(randomString)
   }
@@ -269,6 +293,11 @@ if (await isStreamLive(streamerID)) {
   console.log("Stream offline")
 }
 
+app.get('/login', (req, res) => {
+  res.sendFile("/home/html/login.html")
+  res.status(200)
+})
+
 setInterval(async function () {
   const stream = await isStreamLive(streamerID)
   findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3', })
@@ -276,7 +305,7 @@ setInterval(async function () {
     console.log("Stream online")
     let eggsToAdd = defaultEggs
     for (const [viewerName, viewerId] of chatters) {
-      let checkSub = await subLookup(viewerName, viewerId)
+      // let checkSub = await subLookup(viewerName, viewerId)
       if (checkSub == 1) {
         eggsToAdd = defaultEggs * 2
         await eggUpdateCommand(viewerName, eggsToAdd, false)
@@ -302,6 +331,13 @@ app.use(bodyParser.json({
   }
 }))
 
+
+// app.all('/api', function (req, res, next) {
+//   res.header("Access-Control-Allow-Origin", "*")
+//   res.header("Access-Control-Allow-Headers", "X-Requested-With")
+//   next()
+// })
+
 app.listen(port, () => {
   console.log(`Twitch Webhook listening at http://localhost:${port}`)
 })
@@ -310,60 +346,65 @@ app.get('/', (req, res) => {
   res.redirect(301, 'https://www.twitch.tv/maddeth')
 })
 
-app.get('/add-colour', (req, res) => {
-  res.sendFile("/home/html/form.html")
-  res.status(200)
-})
+// app.get('/add-colour', (req, res) => {
+//   res.sendFile("/home/html/form.html")
+//   res.status(200)
+// })
 
-app.get('/my.css', (req, res) => {
-  res.sendFile("/home/html/my.css")
-  res.status(200)
-})
+// app.get('/my.css', (req, res) => {
+//   res.sendFile("/home/html/my.css")
+//   res.status(200)
+// })
 
-app.get("/colours/:id", async (req, res, next) => {
-  let result = await dbGetColour(req.params.id)
-  res.status(200).json(result)
-})
+// app.get("/colours/:id", async (req, res) => {
+//   let result = await dbGetColour(req.params.id)
+//   res.status(200).json(result)
+// })
 
-app.get("/colours", (req, res) => {
-  res.sendFile("/home/html/colourlist.html")
-  res.status(200)
-})
+// app.get("/colours", (req, res) => {
+//   res.sendFile("/home/html/colourlist.html")
+//   res.status(200)
+// })
 
-app.get("/colour-list.json", async (req, res, next) => {
-  let result = await dbGetAllColoursCall()
-  res.status(200).json(JSON.parse(result))
-})
+// app.get("/colour-list.json", async (req, res) => {
+//   let result = await dbGetAllColoursCall()
+//   res.status(200).json(JSON.parse(result))
+// })
 
 app.get('/tts/:id', (req, res) => {
   let audioFilePath = `/home/html/tts/${req.params.id}.mp3`
   res.sendFile(audioFilePath)
 })
 
-// TODO: rewrite this
-app.post("/colours/", async (req, res, next) => {
-  let reqBody = req.body
-  let regex = /[0-9A-Fa-f]{6}/g
-  let newHex = reqBody.hex_code
-  let newColour = String(reqBody.colour_name)
-  console.log(newColour)
-  if (newHex.match(regex)) {
-    try {
-      await dbAddColour(newColour, newHex)
-      res.status(200).json({
-        "colour_id": coloursRowCount
-      })
-    } catch (e) {
-      res.status(400).json({
-        "error": "Colour " + newColour + ", hex " + newHex + "not added"
-      })
-    }
-  } else {
-    console.log(`${newColour}:${newHex} was not added`)
-    res.status(400).json({
-      "error": "Colour " + newColour + ", hex " + newHex + "not added"
-    })
-  }
+// // TODO: rewrite this
+// app.post("/colours/", async (req, res) => {
+//   let reqBody = req.body
+//   let regex = /[0-9A-Fa-f]{6}/g
+//   let newHex = reqBody.hex_code
+//   let newColour = String(reqBody.colour_name)
+//   console.log(newColour)
+//   if (newHex.match(regex)) {
+//     try {
+//       await dbAddColour(newColour, newHex)
+//       res.status(200).json({
+//         "colour_id": coloursRowCount
+//       })
+//     } catch (e) {
+//       res.status(400).json({
+//         "error": "Colour " + newColour + ", hex " + newHex + "not added"
+//       })
+//     }
+//   } else {
+//     console.log(`${newColour}:${newHex} was not added`)
+//     res.status(400).json({
+//       "error": "Colour " + newColour + ", hex " + newHex + "not added"
+//     })
+//   }
+// })
+
+app.post('/api', (req, res) => {
+  console.log(req.body)
+  res.status(200).json({ result: req.body.text });
 })
 
 app.post('/createWebhook/:broadcasterId', (req, res) => {
@@ -377,6 +418,7 @@ app.post('/createWebhook/:broadcasterId', (req, res) => {
       "Authorization": bearerToken // Generate however you need to
     }
   }
+
 
   let createWebHookBody = {
     "type": "channel.channel_points_custom_reward_redemption.add",
@@ -511,3 +553,138 @@ const runTTS = async (message) => {
   fs.writeFile(`/home/html/tts/${id}.mp3`, buffer)
   return id
 }
+
+app.get('/api/colours', async (req, res) => {
+  const auth = checkAuth(req)
+
+  if (auth.aud == "authenticated") {
+    const response = await getAllColours()
+    res.status(200).json(response)
+  } else {
+    res.status(401).json(auth)
+  }
+})
+
+app.post('/api/colours', async (req, res) => {
+  const auth = checkAuth(req)
+
+  if (auth.aud == "authenticated") {
+    const user = auth.user_metadata.nickname
+    const colour = req.body.colour.toLowerCase().match(/[0-9a-z\s]{0,60}/g)[0].trim()
+    const hex = req.body.hex.toUpperCase().match(/[0-9A-F]{6}/g)[0].trim()
+    try {
+      const addColourResponse = await addColour(colour, hex, user)
+      res.status(200).json(addColourResponse)
+      return
+    } catch (error) {
+      console.log(error)
+      res.status(200).json(error)
+    }
+
+  } else {
+    res.status(401).json(auth)
+  }
+})
+
+app.get('/api/colours/username', async (req, res) => {
+  const auth = checkAuth(req)
+  const user = auth.user_metadata.nickname
+
+  if (auth.aud == "authenticated") {
+    const response = await getByUserName(user)
+    res.status(200).json(response)
+  } else {
+    res.status(401).json(auth)
+  }
+})
+
+app.post('/api/colours/username', async (req, res) => {
+  const auth = checkAuth(req)
+  const user = auth.user_metadata.nickname
+
+  if (auth.aud == "authenticated") {
+    if (req.body.username) {
+      const response = await getByUserName(req.body.username)
+      res.status(200).json(response)
+    } else {
+      const response = await getByUserName(user)
+      res.status(200).json(response)
+    }
+  } else {
+    res.status(401).json(auth)
+  }
+})
+
+app.post('/api/colours/hex', async (req, res) => {
+  const auth = checkAuth(req)
+
+  if (req.body.hasOwnProperty('hex')) {
+    const hex = req.body.hex.toUpperCase().match(/[0-9A-F]{6}/g)[0].trim()
+
+    if (auth.aud == "authenticated") {
+      const response = await getColourByHex(hex)
+      res.status(200).json(response)
+    } else {
+      res.status(401).json(auth)
+    }
+  } else {
+    res.status(200).json({ "Error": "hex not supplied" })
+  }
+})
+
+app.post('/api/colours/colourName', async (req, res) => {
+  const auth = checkAuth(req)
+
+  if (req.body.hasOwnProperty('colour')) {
+    const colour = req.body.colour.toLowerCase().match(/[0-9a-z\s]{0,60}/g)[0].trim()
+
+    if (auth.aud == "authenticated") {
+      const response = await getByColourName(colour)
+      res.status(200).json(response)
+    } else {
+      res.status(401).json(auth)
+    }
+  } else {
+    res.status(200).json({ "Error": "hex not supplied" })
+  }
+})
+
+app.get('/api/colours/getLastColour', async (req, res) => {
+  const auth = checkAuth(req)
+  if (auth.aud == "authenticated") {
+    const response = await getLastColour()
+    res.status(200).json(response)
+  } else {
+    res.status(401).json(auth)
+  }
+})
+
+function checkAuth(request) {
+  const authHeader = request.get('Authorization')
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return "error: 'Unauthorized: Missing or invalid Authorization header'"
+  }
+
+  const token = authHeader.split(' ')[1]
+  const decoded = verifyToken(token)
+
+  if (!decoded) {
+    return "error: 'Unauthorized: Invalid token'"
+  }
+  return decoded
+}
+
+
+function verifyToken(token) {
+  try {
+    const decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET)
+    return decoded
+  } catch (err) {
+    return null
+  }
+}
+
+import swaggerUi from 'swagger-ui-express'
+import swaggerFile from './swagger-output.json' with { type: "json" }
+app.use('/doc', swaggerUi.serve, swaggerUi.setup(swaggerFile))
