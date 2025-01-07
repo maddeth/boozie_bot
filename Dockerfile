@@ -1,4 +1,7 @@
-FROM node:latest
+ARG SUPABASE_JWT_SECRET="placeholder"
+ARG DATABASE_URL="placeholder"
+
+FROM node:lts-alpine3.20
 
 RUN mkdir -p /home/node/bot/node_modules && chown -R node:node /home/node/bot
 
@@ -16,4 +19,4 @@ COPY --chown=node:node . .
 
 EXPOSE 3000 3001
 
-CMD [ "node", "index.js" ]
+CMD [ "node", "server.js" ]
