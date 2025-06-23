@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless"
+import logger from './logger.js'
 
 const sql = neon(process.env.DATABASE_URL)
 
@@ -7,19 +8,29 @@ export const coloursRowCount2 = async () => {
     const response = await sql('SELECT count(*) FROM colours')
     return response[0].count
   } catch (error) {
-    console.log(error)
+    logger.error('Failed to get colours row count', error)
     return null
   }
 }
 
 export async function getRandomColourByName(req) {
-  const search = `select colourname from colours where colourname like '%${req}%';`
-  let colourMap = await sql(search)
-  if (colourMap.length > 0) {
-    let randomColour = colourMap[Math.floor(Math.random() * colourMap.length)]
-    return randomColour.colourname
+  try {
+    // Sanitize input and use parameterized query
+    const sanitizedReq = req.toString().trim()
+    if (!sanitizedReq || sanitizedReq.length === 0) {
+      return false
+    }
+    
+    const colourMap = await sql('SELECT colourname FROM colours WHERE colourname ILIKE $1', [`%${sanitizedReq}%`])
+    if (colourMap.length > 0) {
+      let randomColour = colourMap[Math.floor(Math.random() * colourMap.length)]
+      return randomColour.colourname
+    }
+    return false
+  } catch (error) {
+    logger.error('Failed to get random colour by name', { searchTerm: req, error })
+    return false
   }
-  return false;
 }
 
 export const getAllColours = async () => {
@@ -33,13 +44,23 @@ export const getById = async (req) => {
 }
 
 export const getByColourName = async (req) => {
-  const search = `select colourname, hex_value from colours where colourname like '%${req}%';`
-  const response = await sql(search)
-  return response
+  try {
+    // Sanitize input and use parameterized query
+    const sanitizedReq = req.toString().trim()
+    if (!sanitizedReq || sanitizedReq.length === 0) {
+      return []
+    }
+    
+    const response = await sql('SELECT colourname, hex_value FROM colours WHERE colourname ILIKE $1', [`%${sanitizedReq}%`])
+    return response
+  } catch (error) {
+    logger.error('Failed to get colour by name', { searchTerm: req, error })
+    return []
+  }
 }
 
 export const getColourByHex = async (req) => {
-  console.log(req)
+  logger.debug('Looking up colour by hex', { hex: req })
   const response = await sql('SELECT colourname FROM colours where hex_value = $1', [req])
   // const response = await sql(search)
   return response

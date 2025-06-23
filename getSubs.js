@@ -5,12 +5,17 @@ import { ApiClient } from '@twurple/api'
 import config from './config.json' with { type: "json" }
 
 const streamerID = config.myChannelUserId
-const tokenData = JSON.parse(await fs.readFile(`./tokens.${streamerID}.json`, 'UTF-8'))
+// const tokenData = JSON.parse(await fs.readFile(`./tokens.${streamerID}.json`, 'UTF-8'))
 const clientId = config.clientId
 const clientSecret = config.clientSecret
 const authProvider = new RefreshingAuthProvider({ clientId, clientSecret })
+const boozieBotUserID = config.boozieBotUserID
+// const streamerID = config.myChannelUserId
 
-authProvider.onRefresh(async (streamerID, newTokenData) => await fs.writeFile(`./tokens.${streamerID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'))
+// const tokenData = JSON.parse(await fs.readFile(`./tokens.${streamerID}.json`, 'UTF-8'))
+const tokenData = JSON.parse(await fs.readFile(`./tokens.${boozieBotUserID}.json`, 'UTF-8'))
+
+authProvider.onRefresh(async (boozieBotUserID, newTokenData) => await fs.writeFile(`./tokens.${boozieBotUserID}.json`, JSON.stringify(newTokenData, null, 4), 'UTF-8'))
 
 await authProvider.addUserForToken(tokenData, ['chat'])
 await authProvider.addUserForToken(tokenData, ['user:read:subscriptions'])
@@ -18,14 +23,14 @@ await authProvider.addUserForToken(tokenData, ['user:read:subscriptions'])
 const api = new ApiClient({ authProvider })
 
 export async function subLookup(viewerName, viewerId) {
-  const isSubbed = await api.subscriptions.getSubscriptionForUser(streamerID, viewerId)
+  const isSubbed = await api.subscriptions.getSubscriptionForUser(viewerId, streamerID)
   let tier = "0"
   if (isSubbed != null) {
     tier = isSubbed.tier.slice(0, -3)
-    // console.log(viewerName + " is tier " + tier)
+    console.log(viewerName + " is tier " + tier)
     return tier
   } else {
-    // console.log(viewerName + " is tier " + tier)
+    console.log(viewerName + " is tier " + tier)
     return tier
   }
 }
