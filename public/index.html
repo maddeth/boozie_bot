@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maddeth Bot Dashboard</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .container {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .auth-section {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: #9146ff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #7c3aed;
+        }
+        .button.secondary {
+            background-color: #374151;
+        }
+        .button.secondary:hover {
+            background-color: #4b5563;
+        }
+        .hidden {
+            display: none;
+        }
+        .user-info {
+            background-color: #374151;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .moderator-panel {
+            background-color: #065f46;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #10b981;
+        }
+        .access-denied {
+            background-color: #7f1d1d;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #ef4444;
+            text-align: center;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .nav-links {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .nav-links a {
+            margin: 0 10px;
+            color: #9146ff;
+            text-decoration: none;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Maddeth Bot Dashboard</h1>
+        <p>Manage your Twitch bot and channel settings</p>
+    </div>
+
+    <div class="container">
+        <div id="authSection" class="auth-section">
+            <div id="loginSection">
+                <h2>Login with Twitch</h2>
+                <p>Sign in to access the dashboard</p>
+                <button class="button" onclick="signInWithTwitch()">
+                    Login with Twitch
+                </button>
+            </div>
+
+            <div id="userSection" class="hidden">
+                <div id="userInfo" class="user-info">
+                    <!-- User info will be populated here -->
+                </div>
+                <button class="button secondary" onclick="signOut()">Sign Out</button>
+            </div>
+        </div>
+
+        <div id="loadingSection" class="loading hidden">
+            <h3>Loading user information...</h3>
+        </div>
+
+        <div class="nav-links">
+            <a href="#" onclick="showDashboard()">Dashboard</a>
+            <a href="#" onclick="showModeratorPanel()">Moderator Panel</a>
+            <a href="https://twitch.tv/maddeth" target="_blank">Watch Stream</a>
+        </div>
+
+        <div id="dashboardSection" class="hidden">
+            <h2>Dashboard</h2>
+            <p>Welcome to the main dashboard! Here you can view general information about the bot.</p>
+            <div id="publicStats">
+                <!-- Public stats will be loaded here -->
+            </div>
+        </div>
+
+        <div id="moderatorSection" class="hidden">
+            <div id="moderatorPanel" class="moderator-panel hidden">
+                <h2>🛡️ Moderator Panel</h2>
+                <p>Welcome, moderator! You have access to special features.</p>
+                
+                <div id="moderatorStats">
+                    <h3>Bot Statistics</h3>
+                    <div id="statsContent">Loading...</div>
+                </div>
+
+                <div id="moderatorsList" style="margin-top: 20px;">
+                    <h3>Current Moderators</h3>
+                    <div id="modsContent">Loading...</div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h3>Moderator Actions</h3>
+                    <button class="button" onclick="refreshModeratorData()">Refresh Data</button>
+                    <button class="button secondary" onclick="viewUserStats()">View All Users</button>
+                </div>
+            </div>
+
+            <div id="accessDenied" class="access-denied hidden">
+                <h2>🚫 Access Denied</h2>
+                <p>This page is only accessible to channel moderators.</p>
+                <p>If you believe this is an error, please contact the streamer.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase configuration from config.js
+        const supabase = window.supabase.createClient(
+            window.CONFIG.SUPABASE_URL, 
+            window.CONFIG.SUPABASE_ANON_KEY
+        )
+
+        let currentUser = null
+        let userRole = null
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuthState()
+        })
+
+        // Check authentication state
+        async function checkAuthState() {
+            try {
+                const { data: { session } } = await supabase.auth.getSession()
+                
+                if (session) {
+                    currentUser = session.user
+                    await loadUserRole(session.access_token)
+                    showUserInterface()
+                } else {
+                    showLoginInterface()
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error)
+                showLoginInterface()
+            }
+        }
+
+        // Load user role from API
+        async function loadUserRole(token) {
+            document.getElementById('loadingSection').classList.remove('hidden')
+            
+            try {
+                const response = await fetch('/api/user/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                
+                if (response.ok) {
+                    userRole = await response.json()
+                } else {
+                    console.warn('Failed to load user role:', response.statusText)
+                    userRole = null
+                }
+            } catch (error) {
+                console.error('Failed to load user role:', error)
+                userRole = null
+            }
+            
+            document.getElementById('loadingSection').classList.add('hidden')
+        }
+
+        // Sign in with Twitch
+        async function signInWithTwitch() {
+            try {
+                const { error } = await supabase.auth.signInWithOAuth({
+                    provider: 'twitch',
+                    options: {
+                        redirectTo: window.location.origin
+                    }
+                })
+                
+                if (error) throw error
+            } catch (error) {
+                console.error('Sign in failed:', error)
+                alert('Sign in failed: ' + error.message)
+            }
+        }
+
+        // Sign out
+        async function signOut() {
+            try {
+                await supabase.auth.signOut()
+                currentUser = null
+                userRole = null
+                showLoginInterface()
+            } catch (error) {
+                console.error('Sign out failed:', error)
+            }
+        }
+
+        // Show login interface
+        function showLoginInterface() {
+            document.getElementById('loginSection').classList.remove('hidden')
+            document.getElementById('userSection').classList.add('hidden')
+            document.getElementById('dashboardSection').classList.add('hidden')
+            document.getElementById('moderatorSection').classList.add('hidden')
+        }
+
+        // Show user interface
+        function showUserInterface() {
+            document.getElementById('loginSection').classList.add('hidden')
+            document.getElementById('userSection').classList.remove('hidden')
+            
+            // Update user info
+            const userInfo = document.getElementById('userInfo')
+            userInfo.innerHTML = `
+                <h3>Welcome, ${currentUser?.user_metadata?.name || currentUser?.email}!</h3>
+                <p><strong>Username:</strong> ${userRole?.username || 'Unknown'}</p>
+                <p><strong>Roles:</strong> ${getRoleText()}</p>
+                <p><strong>Last Seen:</strong> ${userRole?.lastSeen ? new Date(userRole.lastSeen).toLocaleString() : 'Never'}</p>
+            `
+            
+            showDashboard()
+        }
+
+        // Get role text
+        function getRoleText() {
+            if (!userRole || !userRole.roles) return 'Viewer'
+            
+            const roles = []
+            if (userRole.roles.isModerator) roles.push('Moderator')
+            if (userRole.roles.isAdmin) roles.push('Admin')
+            if (userRole.roles.isVip) roles.push('VIP')
+            if (userRole.roles.isSubscriber) roles.push(`Subscriber (Tier ${userRole.subscriptionTier})`)
+            
+            return roles.length > 0 ? roles.join(', ') : 'Viewer'
+        }
+
+        // Show dashboard
+        function showDashboard() {
+            document.getElementById('dashboardSection').classList.remove('hidden')
+            document.getElementById('moderatorSection').classList.add('hidden')
+        }
+
+        // Show moderator panel
+        async function showModeratorPanel() {
+            document.getElementById('dashboardSection').classList.add('hidden')
+            document.getElementById('moderatorSection').classList.remove('hidden')
+            
+            if (userRole && userRole.roles.isModerator) {
+                document.getElementById('moderatorPanel').classList.remove('hidden')
+                document.getElementById('accessDenied').classList.add('hidden')
+                await loadModeratorData()
+            } else {
+                document.getElementById('moderatorPanel').classList.add('hidden')
+                document.getElementById('accessDenied').classList.remove('hidden')
+            }
+        }
+
+        // Load moderator data
+        async function loadModeratorData() {
+            if (!currentUser) return
+            
+            try {
+                const session = await supabase.auth.getSession()
+                const token = session.data?.session?.access_token
+                
+                if (!token) return
+                
+                // Load stats
+                const statsResponse = await fetch('/api/user/stats', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                
+                if (statsResponse.ok) {
+                    const stats = await statsResponse.json()
+                    document.getElementById('statsContent').innerHTML = `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div style="background: #4b5563; padding: 15px; border-radius: 4px;">
+                                <h4>Total Users</h4>
+                                <p style="font-size: 24px; margin: 0;">${stats.totalUsers}</p>
+                            </div>
+                            <div style="background: #4b5563; padding: 15px; border-radius: 4px;">
+                                <h4>Moderators</h4>
+                                <p style="font-size: 24px; margin: 0;">${stats.moderators}</p>
+                            </div>
+                            <div style="background: #4b5563; padding: 15px; border-radius: 4px;">
+                                <h4>Subscribers</h4>
+                                <p style="font-size: 24px; margin: 0;">${stats.subscribers}</p>
+                            </div>
+                            <div style="background: #4b5563; padding: 15px; border-radius: 4px;">
+                                <h4>Registered Users</h4>
+                                <p style="font-size: 24px; margin: 0;">${stats.registeredUsers}</p>
+                            </div>
+                        </div>
+                    `
+                }
+                
+                // Load moderators list
+                const modsResponse = await fetch('/api/user/moderators', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+                
+                if (modsResponse.ok) {
+                    const modsData = await modsResponse.json()
+                    const modsList = modsData.moderators.map(mod => `
+                        <div style="background: #4b5563; padding: 10px; margin: 5px 0; border-radius: 4px;">
+                            <strong>${mod.displayName || mod.username}</strong>
+                            <small style="color: #9ca3af; display: block;">
+                                Moderator since: ${mod.moderatorSince ? new Date(mod.moderatorSince).toLocaleDateString() : 'Unknown'}
+                            </small>
+                        </div>
+                    `).join('')
+                    
+                    document.getElementById('modsContent').innerHTML = modsList || '<p>No moderators found</p>'
+                }
+                
+            } catch (error) {
+                console.error('Failed to load moderator data:', error)
+            }
+        }
+
+        // Refresh moderator data
+        async function refreshModeratorData() {
+            await loadModeratorData()
+            alert('Moderator data refreshed!')
+        }
+
+        // View user stats (placeholder)
+        function viewUserStats() {
+            alert('User stats feature coming soon!')
+        }
+
+        // Listen for auth changes
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN') {
+                checkAuthState()
+            } else if (event === 'SIGNED_OUT') {
+                showLoginInterface()
+            }
+        })
+    </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import { odata, TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
 import { v4 as uuidv4 } from 'uuid';
-import logger from './logger.js';
+import logger from '../../utils/logger.js';
 
 const account = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccount;
 const accountKey = JSON.parse(await fs.readFile('./secret.json', 'utf-8')).tableAccountKey;

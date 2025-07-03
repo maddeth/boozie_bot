@@ -1,7 +1,7 @@
 import express from 'express'
 import https from 'https'
 import crypto from 'crypto'
-import logger from '../logger.js'
+import logger from '../utils/logger.js'
 import config from '../config.json' with { type: "json" }
 import { actionEventSub } from '../services/twitchEventService.js'
 

@@ -1,8 +1,8 @@
 import crypto from 'crypto'
-import { getHexByColourName, getColourByHex, getRandomColourByName } from '../colours2.js'
+import { getHexByColourName, getColourByHex, getRandomColourByName } from './database/coloursService.js'
 import OBSService from './obsService.js'
 import { eggUpdateCommand } from './eggService.js'
-import logger from '../logger.js'
+import logger from '../utils/logger.js'
 
 const obsService = new OBSService()
 

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import fetch from 'node-fetch'
 import { v4 as uuidv4 } from 'uuid'
-import logger from '../logger.js'
+import logger from '../utils/logger.js'
 
 class TTSService {
   constructor() {

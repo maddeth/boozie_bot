@@ -1,5 +1,5 @@
-import { dbGetEggs, dbAddEggUser, dbUpdateEggs } from '../eggs.js'
-import logger from '../logger.js'
+import { dbGetEggs, dbAddEggUser, dbUpdateEggs } from './legacy/eggs.js'
+import logger from '../utils/logger.js'
 
 export async function eggUpdateCommand(userToUpdate, eggsToAdd, printToChat, sendChatMessage = null) {
   const getInfoByUser = await dbGetEggs(userToUpdate)

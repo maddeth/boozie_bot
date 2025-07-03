@@ -1,5 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js'
-import logger from '../logger.js'
+import logger from '../utils/logger.js'
 import config from '../config.json' with { type: "json" }
 
 class OBSService {

@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless"
-import logger from './logger.js'
+import logger from '../../utils/logger.js'
 
 const sql = neon(process.env.DATABASE_URL)
 

@@ -1,9 +1,21 @@
 import express from 'express'
-import logger from '../logger.js'
-import { getAllColours, getByColourName, getColourByHex, getByUserName, getLastColour, addColour } from '../colours2.js'
+import logger from '../utils/logger.js'
+import { getAllColours, getByColourName, getColourByHex, getByUserName, getLastColour, addColour } from '../services/database/coloursService.js'
 import { checkAuth } from '../middleware/auth.js'
+import userRolesRoutes from './userRoles.js'
+import commandsRoutes from './commands.js'
+import quotesRoutes from '../services/web/routes/quotes.js'
 
 const router = express.Router()
+
+// User roles and privileges endpoints
+router.use('/user', userRolesRoutes)
+
+// Custom commands endpoints
+router.use('/commands', commandsRoutes)
+
+// Quotes endpoints
+router.use('/quotes', quotesRoutes)
 
 router.post('/', (req, res) => {
   logger.debug('API test endpoint called', { body: req.body })
