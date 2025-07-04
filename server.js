@@ -66,6 +66,8 @@ async function startServer() {
     app.use('/api', apiRoutes)
     app.use('/api/eggs', eggsRoutes)
     app.use('/api/alerts', alertsRoutes)
+    app.use('/api/pools', (await import('./routes/pools.js')).default)
+    app.use('/api/user-merge', (await import('./routes/userMerge.js')).default)
     app.use('/', webhookRoutes)
     app.use('/', staticRoutes)
 

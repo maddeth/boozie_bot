@@ -16,6 +16,7 @@ class TwitchService {
     this.websocketService = websocketService
     this.ttsService = new TTSService()
     this.customCommandsService = new CustomCommandsService(websocketService)
+    this.poolService = null // Will be initialized asynchronously
     this.chatClient = null
     this.api = null
     this.authProvider = null
@@ -33,6 +34,14 @@ class TwitchService {
 
   async init() {
     try {
+      // Initialize pool service
+      const PoolService = (await import('./poolService.js')).default
+      this.poolService = new PoolService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require")
+      
+      // Initialize user merge service
+      const UserMergeService = (await import('./userMergeService.js')).default
+      this.userMergeService = new UserMergeService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require")
+      
       // Load tokens and mod list
       const botTokenData = JSON.parse(await fs.readFile(`./tokens.${this.boozieBotUserID}.json`, 'UTF-8'))
       const channelTokenData = JSON.parse(await fs.readFile(`./tokens.${this.streamerID}.json`, 'UTF-8'))
@@ -344,7 +353,7 @@ class TwitchService {
           }
           
           // Add built-in commands
-          commandMessage += ' | Built-in: !eggs, !topeggs, !quote'
+          commandMessage += ' | Built-in: !eggs, !topeggs, !quote, !pool, !donate, !pools, !createpool (moderator), !mergeeggs (moderator)'
           
           // Truncate if too long for Twitch chat (500 char limit)
           if (commandMessage.length > 450) {
@@ -427,6 +436,178 @@ class TwitchService {
       } catch (error) {
         this.sendChatMessage(`${displayName} - Could not load egg leaderboard`)
         logger.error('Failed to get egg leaderboard', { user: displayName, error })
+      }
+      return
+    }
+
+    // Pool commands
+    if (message.startsWith("!pool ")) {
+      const args = message.substring(6).trim().split(' ')
+      const poolName = args[0]
+      
+      if (!poolName) {
+        this.sendChatMessage(`${displayName} - Usage: !pool <poolname>`)
+        return
+      }
+      
+      try {
+        const pool = await this.poolService.getPool(poolName)
+        if (!pool) {
+          this.sendChatMessage(`${displayName} - Pool "${poolName}" not found`)
+        } else {
+          this.sendChatMessage(`${displayName} - Pool "${pool.pool_name}" has ${pool.eggs_amount.toLocaleString()} eggs from ${pool.unique_donors || 0} donors 🥚`)
+        }
+      } catch (error) {
+        this.sendChatMessage(`${displayName} - Could not check pool`)
+        logger.error('Failed to get pool info', { user: displayName, poolName, error })
+      }
+      return
+    }
+
+    if (message.startsWith("!donate ")) {
+      const args = message.substring(8).trim().split(' ')
+      const poolName = args[0]
+      const amount = parseInt(args[1])
+      
+      if (!poolName || !amount || amount < 1) {
+        this.sendChatMessage(`${displayName} - Usage: !donate <poolname> <amount>`)
+        return
+      }
+      
+      try {
+        const userInfo = await this.getUserInfo(displayName)
+        const result = await this.poolService.donateToPool(
+          poolName,
+          userInfo.twitchUserId || userInfo.userId,
+          displayName,
+          amount
+        )
+        
+        this.sendChatMessage(`${displayName} donated ${amount} eggs to pool "${result.poolName}"! Pool total: ${result.newPoolTotal.toLocaleString()} 🥚`)
+      } catch (error) {
+        if (error.message === 'Pool not found') {
+          this.sendChatMessage(`${displayName} - Pool "${poolName}" not found`)
+        } else if (error.message === 'Insufficient eggs') {
+          this.sendChatMessage(`${displayName} - You don't have enough eggs to donate ${amount}`)
+        } else if (error.message === 'Pool is not active') {
+          this.sendChatMessage(`${displayName} - Pool "${poolName}" is not active`)
+        } else {
+          this.sendChatMessage(`${displayName} - Could not process donation`)
+          logger.error('Failed to donate to pool', { user: displayName, poolName, amount, error })
+        }
+      }
+      return
+    }
+
+    if (message.startsWith("!pools")) {
+      try {
+        const pools = await this.poolService.getAllPools()
+        
+        if (pools.length === 0) {
+          this.sendChatMessage(`${displayName} - No active pools available`)
+        } else {
+          const poolList = pools.slice(0, 3).map(pool => 
+            `${pool.pool_name} (${pool.eggs_amount.toLocaleString()})`
+          ).join(', ')
+          const moreText = pools.length > 3 ? ` and ${pools.length - 3} more` : ''
+          this.sendChatMessage(`${displayName} - Active pools: ${poolList}${moreText}`)
+        }
+      } catch (error) {
+        this.sendChatMessage(`${displayName} - Could not list pools`)
+        logger.error('Failed to list pools', { user: displayName, error })
+      }
+      return
+    }
+
+    if (message.startsWith("!createpool ")) {
+      const userInfo = await this.getUserInfo(displayName)
+      
+      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+        this.sendChatMessage(`${displayName} - Only moderators can create pools`)
+        return
+      }
+      
+      const args = message.substring(12).trim()
+      const poolName = args.split(' ')[0]
+      const description = args.substring(poolName.length).trim()
+      
+      if (!poolName) {
+        this.sendChatMessage(`${displayName} - Usage: !createpool <poolname> [description]`)
+        return
+      }
+      
+      try {
+        const pool = await this.poolService.createPool(
+          poolName,
+          description,
+          userInfo.twitchUserId || userInfo.userId,
+          displayName
+        )
+        
+        this.sendChatMessage(`${displayName} created pool "${pool.pool_name}"! Start donating with !donate ${pool.pool_name} <amount>`)
+      } catch (error) {
+        if (error.message === 'Pool name already exists') {
+          this.sendChatMessage(`${displayName} - Pool name already exists`)
+        } else {
+          this.sendChatMessage(`${displayName} - Could not create pool`)
+          logger.error('Failed to create pool', { user: displayName, poolName, error })
+        }
+      }
+      return
+    }
+
+    if (message.startsWith("!mergeeggs ")) {
+      const userInfo = await this.getUserInfo(displayName)
+      
+      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+        this.sendChatMessage(`${displayName} - Only moderators can merge user eggs`)
+        return
+      }
+      
+      const args = message.substring(11).trim().split(' ')
+      const fromUser = args[0]
+      const toUser = args[1]
+      const reason = args.slice(2).join(' ') || 'Moderator merge via chat'
+      
+      if (!fromUser || !toUser) {
+        this.sendChatMessage(`${displayName} - Usage: !mergeeggs <fromUser> <toUser> [reason]`)
+        return
+      }
+      
+      if (fromUser.toLowerCase() === toUser.toLowerCase()) {
+        this.sendChatMessage(`${displayName} - Cannot merge user with themselves`)
+        return
+      }
+      
+      try {
+        // Preview the merge first
+        const preview = await this.userMergeService.previewMerge(fromUser, toUser)
+        
+        if (preview.sourceUser.currentEggs === 0) {
+          this.sendChatMessage(`${displayName} - ${fromUser} has no eggs to transfer`)
+          return
+        }
+        
+        // Execute the merge
+        const adminTwitchId = userInfo.twitchUserId || userInfo.userId || displayName
+        const result = await this.userMergeService.mergeUserEggs(
+          fromUser,
+          toUser,
+          adminTwitchId,
+          displayName,
+          reason,
+          false // Don't delete source account via chat command
+        )
+        
+        this.sendChatMessage(`${displayName} successfully merged ${result.sourceUser.eggsTransferred.toLocaleString()} eggs from ${result.sourceUser.username} to ${result.targetUser.username}. New total: ${result.targetUser.newTotal.toLocaleString()} eggs`)
+        
+      } catch (error) {
+        if (error.message.includes('not found')) {
+          this.sendChatMessage(`${displayName} - User not found: ${error.message}`)
+        } else {
+          this.sendChatMessage(`${displayName} - Could not merge eggs: ${error.message}`)
+          logger.error('Failed to merge eggs via chat', { user: displayName, fromUser, toUser, error })
+        }
       }
       return
     }
