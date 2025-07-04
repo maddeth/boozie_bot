@@ -75,25 +75,25 @@ async function startServer() {
     // Start periodic tasks only after TwitchService is ready
     setInterval(async function () {
       const stream = await twitchService.checkStreamStatus()
-      
+
       // Clean up old TTS files
       findRemoveSync('/home/html/tts', { age: { seconds: 300 }, extensions: '.mp3' })
-      
+
       if (stream) {
         // Reward subscribers with eggs every 15 minutes while stream is live
         try {
           const chatters = twitchService.getChatters()
           let chattersRewarded = 0
-          
-          logger.info('Periodic chatter egg distribution starting', { 
+
+          logger.info('Periodic chatter egg distribution starting', {
             totalChatters: chatters.size,
-            streamLive: true 
+            streamLive: true
           })
-          
+
           for (const [displayName, userId] of chatters) {
             try {
               const tier = await subLookup(displayName, userId)
-              
+
               // Base eggs for everyone, bonus for subscribers
               let eggReward = 5 // Base reward for all chatters
               switch (tier) {
@@ -103,14 +103,14 @@ async function startServer() {
                 case "3000": eggReward = 20; break  // Tier 3: 20 eggs (5 base + 15 bonus)
                 default: eggReward = 5; break       // Default: 5 eggs
               }
-              
+
               // Ensure user exists in database for role tracking
               await getOrCreateUser(userId, displayName.toLowerCase(), displayName)
-              
+
               // Award eggs (silent mode - no chat message)
               await eggUpdateCommand(displayName, eggReward, false, null, userId)
               chattersRewarded++
-              
+
               logger.info('Chatter egg reward granted', {
                 user: displayName,
                 userId: userId,
@@ -118,26 +118,26 @@ async function startServer() {
                 eggsAwarded: eggReward
               })
             } catch (subError) {
-              logger.warn('Failed to process chatter for egg distribution', { 
-                user: displayName, 
-                userId: userId, 
-                error: subError.message 
+              logger.warn('Failed to process chatter for egg distribution', {
+                user: displayName,
+                userId: userId,
+                error: subError.message
               })
             }
           }
-          
-          logger.info('Chatter egg distribution completed', { 
+
+          logger.info('Chatter egg distribution completed', {
             totalChatters: chatters.size,
             chattersRewarded,
             streamLive: true
           })
-          
+
         } catch (error) {
           logger.error('Error during periodic chatter egg distribution', {
             error: error.message
           })
         }
-        
+
         // Sync subscriber status for current chatters (only while live)
         try {
           const subSyncResult = await syncSubscribers(twitchService, subLookup)
@@ -154,18 +154,18 @@ async function startServer() {
           })
         }
       }
-      
+
       // Sync moderator privileges regardless of stream status (runs every 15 minutes)
       try {
         logger.info('Starting periodic moderator sync', {
           streamLive: !!stream
         })
-        
+
         // Update chatter list if stream is live
         if (stream) {
           await twitchService.fetchChatters()
         }
-        
+
         // Sync moderators from Twitch API
         const modSyncResult = await syncModerators(twitchService, config.myChannelUserId)
         if (modSyncResult.success) {
@@ -191,8 +191,8 @@ async function startServer() {
     }
 
     app.listen(port, () => {
-      logger.info('Bot server started', { 
-        port, 
+      logger.info('Bot server started', {
+        port,
         websocketPort: webSocketPort,
         environment: process.env.NODE_ENV || 'development',
         eggUpdateInterval: eggUpdateInterval / 60000 + ' minutes'
