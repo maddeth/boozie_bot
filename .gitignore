@@ -5,3 +5,12 @@ modList.json
 .env
 node_modules/
 package-lock.json
+
+# Cleanup folder
+DELETED/
+
+# Log files
+*.log
+
+# User data
+users.json
