@@ -3,14 +3,9 @@
  * Handles execution and management of custom bot commands
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
-import dotenv from 'dotenv'
 import { getUserEggs, updateUserEggs } from './eggServicePostgres.js'
-
-// Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
-const sql = neon(process.env.DATABASE_URL)
 
 class CustomCommandsService {
   constructor(websocketService = null) {
@@ -38,6 +33,7 @@ class CustomCommandsService {
    */
   async loadCommands() {
     try {
+      logger.info('Loading custom commands from database...')
       const commands = await sql(`
         SELECT id, trigger, response, cooldown, permission, enabled, usage_count, 
                COALESCE(trigger_type, 'exact') as trigger_type, audio_url,

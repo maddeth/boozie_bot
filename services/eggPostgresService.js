@@ -4,14 +4,12 @@
  * Replaces the Azure Table Storage implementation
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
 import dotenv from 'dotenv'
 
 // Load environment variables from .env file in parent directory
-dotenv.config({ path: '/home/maddeth/bot/.env' })
 
-const sql = neon(process.env.DATABASE_URL)
 
 /**
  * Get a user's egg count from PostgreSQL

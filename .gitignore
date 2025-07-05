@@ -8,6 +8,7 @@ package-lock.json
 
 # Cleanup folder
 DELETED/
+scripts/
 
 # Log files
 *.log

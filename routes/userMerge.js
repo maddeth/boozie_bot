@@ -6,8 +6,8 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
-// Initialize merge service with fallback URL
-const userMergeService = new UserMergeService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require");
+// Initialize merge service
+const userMergeService = new UserMergeService();
 
 /**
  * @swagger

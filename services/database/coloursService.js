@@ -1,7 +1,6 @@
-import { neon } from "@neondatabase/serverless"
+import sql from './db.js'
 import logger from '../../utils/logger.js'
 
-const sql = neon(process.env.DATABASE_URL)
 
 export const coloursRowCount2 = async () => {
   try {

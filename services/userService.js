@@ -3,14 +3,12 @@
  * Manages user data, roles, and privileges across Twitch and Supabase
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
 import dotenv from 'dotenv'
 
 // Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
 
-const sql = neon(process.env.DATABASE_URL)
 
 /**
  * Get or create a user in the database
@@ -280,6 +278,7 @@ export const getUserByTwitchId = async (twitchUserId) => {
  */
 export const getUserBySupabaseId = async (supabaseUserId) => {
   try {
+    console.log('🔍 getUserBySupabaseId called with:', typeof supabaseUserId, JSON.stringify(supabaseUserId))
     const result = await sql(
       'SELECT * FROM users WHERE supabase_user_id = $1',
       [supabaseUserId]

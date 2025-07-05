@@ -36,11 +36,11 @@ class TwitchService {
     try {
       // Initialize pool service
       const PoolService = (await import('./poolService.js')).default
-      this.poolService = new PoolService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require")
+      this.poolService = new PoolService()
       
       // Initialize user merge service
       const UserMergeService = (await import('./userMergeService.js')).default
-      this.userMergeService = new UserMergeService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require")
+      this.userMergeService = new UserMergeService()
       
       // Load tokens and mod list
       const botTokenData = JSON.parse(await fs.readFile(`./tokens.${this.boozieBotUserID}.json`, 'UTF-8'))
@@ -243,27 +243,39 @@ class TwitchService {
 
     if (message.startsWith("!addeggs")) {
       if (await this.isBotMod(displayName)) {
-        var messageBody = unformattedMessage.slice(8)
-        var command = unformattedMessage.slice(-8)
-        var stringArray = messageBody.match(/-?[a-zA-Z0-9]+/g)
-        stringArray = stringArray.filter(item => item.trim() !== '')
-
-        if (stringArray.length != 2) {
-          this.sendChatMessage("Incorrect arguements, please use " + command + " username numberOfEggs")
+        var messageBody = unformattedMessage.slice(8).trim()
+        var command = "!addeggs"
+        // Split by spaces to get username and number
+        var parts = messageBody.split(/\s+/)
+        
+        if (parts.length !== 2) {
+          this.sendChatMessage("Incorrect arguments, please use " + command + " username numberOfEggs")
           return
         }
-        if (typeof Number(stringArray[0]) === 'number' && isNaN(Number(stringArray[1]))) {
-          this.sendChatMessage("Command in wrong format, please use " + command + " username numberOfEggs")
+        
+        let userToUpdate = parts[0]
+        let eggsToAdd = parseInt(parts[1])
+        
+        // Validate username (Twitch rules: alphanumeric + underscore, 4-25 chars)
+        if (!/^[a-zA-Z0-9_]{4,25}$/.test(userToUpdate)) {
+          this.sendChatMessage(`Invalid username format: ${userToUpdate}`)
           return
-        } else {
-          let eggsToAdd = Number(stringArray[1])
-          let userToUpdate = stringArray[0]
-            .replace(/[\u200B-\u200D\uFEFF\u00A0\u180E\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uF3A0]/g, '')
-            .trim()
-          
-          // Try to get the Twitch user ID for the target user
-          let targetTwitchUserId = null
-          try {
+        }
+        
+        // Validate number
+        if (isNaN(eggsToAdd)) {
+          this.sendChatMessage("Invalid number of eggs: " + parts[1])
+          return
+        }
+        
+        // Clean up any invisible characters from the username
+        userToUpdate = userToUpdate
+          .replace(/[\u200B-\u200D\uFEFF\u00A0\u180E\u2000-\u200F\u2028-\u202F\u205F-\u206F\u3000\uF3A0]/g, '')
+          .trim()
+        
+        // Try to get the Twitch user ID for the target user
+        let targetTwitchUserId = null
+        try {
             // Check if user is in chatters list
             targetTwitchUserId = this.chatters.get(userToUpdate)
             
@@ -278,9 +290,8 @@ class TwitchService {
             logger.debug('Could not get Twitch ID for egg command target', { userToUpdate, error: error.message })
           }
           
-          await eggUpdateCommand(userToUpdate, eggsToAdd, true, this.sendChatMessage.bind(this), targetTwitchUserId)
-          return
-        }
+        await eggUpdateCommand(userToUpdate, eggsToAdd, true, this.sendChatMessage.bind(this), targetTwitchUserId)
+        return
       } else {
         this.sendChatMessage("Get fucked " + displayName + ", you're not a mod cmonBruh")
         return

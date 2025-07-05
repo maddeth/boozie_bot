@@ -3,14 +3,12 @@
  * Manages user eggs using PostgreSQL database linked to Twitch IDs
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
 import dotenv from 'dotenv'
 
 // Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
 
-const sql = neon(process.env.DATABASE_URL)
 
 /**
  * Get user's egg count by Twitch user ID or username

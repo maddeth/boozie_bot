@@ -57,40 +57,74 @@ function processEventSub(event, res) {
     } else if (eventType === "channel.subscribe") {
       // New subscription
       let viewerName = eventData.user_name
+      let viewerId = eventData.user_id
       let tier = eventData.tier
       logger.info('New subscription', { 
-        viewer: viewerName, 
+        viewer: viewerName,
+        viewerId,
         tier,
         eventType 
       })
       
-      actionEventSub("subscription", { tier }, viewerName, websocketService)
+      actionEventSub("subscription", { tier, userId: viewerId }, viewerName, websocketService)
+      
+    } else if (eventType === "channel.subscription.message") {
+      // Re-subscription with message
+      let viewerName = eventData.user_name
+      let viewerId = eventData.user_id
+      let tier = eventData.tier
+      let cumulativeMonths = eventData.cumulative_months
+      let streakMonths = eventData.streak_months
+      let message = eventData.message?.text
+      
+      logger.info('Re-subscription', { 
+        viewer: viewerName,
+        viewerId,
+        tier,
+        cumulativeMonths,
+        streakMonths,
+        eventType 
+      })
+      
+      actionEventSub("resubscription", { 
+        tier, 
+        userId: viewerId, 
+        cumulativeMonths, 
+        streakMonths, 
+        message 
+      }, viewerName, websocketService)
       
     } else if (eventType === "channel.subscription.gift") {
       // Gift subscription
       let gifterName = eventData.user_name
+      let gifterId = eventData.user_id
       let recipientName = eventData.is_anonymous ? "Anonymous" : eventData.user_name
+      let recipientId = eventData.is_anonymous ? null : eventData.user_id
       let tier = eventData.tier
       let total = eventData.total || 1
       logger.info('Gift subscription', { 
         gifter: gifterName,
+        gifterId,
         recipient: recipientName,
+        recipientId,
         tier,
         total,
         eventType 
       })
       
-      actionEventSub("gift_subscription", { tier, total, recipient: recipientName }, gifterName, websocketService)
+      actionEventSub("gift_subscription", { tier, total, recipient: recipientName, userId: gifterId, recipientId }, gifterName, websocketService)
       
     } else if (eventType === "channel.follow") {
       // New follow
       let viewerName = eventData.user_name
+      let viewerId = eventData.user_id
       logger.info('New follow', { 
-        viewer: viewerName, 
+        viewer: viewerName,
+        viewerId,
         eventType 
       })
       
-      actionEventSub("follow", {}, viewerName, websocketService)
+      actionEventSub("follow", { userId: viewerId }, viewerName, websocketService)
       
     } else {
       logger.warn('Unknown EventSub type', { eventType, eventData })
@@ -156,6 +190,7 @@ router.post('/createWebhook/:broadcasterId', async (req, res) => {
     const eventTypes = [
       "channel.channel_points_custom_reward_redemption.add",
       "channel.subscribe",
+      "channel.subscription.message",  // Re-subscriptions
       "channel.subscription.gift", 
       "channel.follow"
     ]

@@ -13,6 +13,7 @@ import {
 import { getUserBySupabaseId } from '../services/userService.js'
 import { authenticateToken } from '../middleware/auth.js'
 import logger from '../utils/logger.js'
+import sql from '../services/database/db.js'
 
 const router = express.Router()
 
@@ -51,16 +52,33 @@ router.get('/my-eggs', authenticateToken, async (req, res) => {
         username: user.username,
         displayName: user.display_name,
         eggs: 0,
-        hasEggs: false
+        hasEggs: false,
+        rank: null
       })
     }
+    
+    // Calculate user's rank by counting users with more eggs
+    const rankResult = await sql(
+      'SELECT COUNT(*) + 1 as rank FROM eggs WHERE eggs_amount > $1',
+      [eggData.eggsAmount]
+    )
+    const userRank = rankResult[0]?.rank !== undefined ? parseInt(rankResult[0].rank, 10) : null
+    
+    logger.debug('Rank calculation', { 
+      userId: user.twitch_user_id,
+      username: eggData.username,
+      eggs: eggData.eggsAmount,
+      rankResult: rankResult[0],
+      userRank 
+    })
     
     res.json({
       username: eggData.username,
       displayName: user.display_name,
       eggs: eggData.eggsAmount,
       hasEggs: true,
-      lastUpdated: eggData.updatedAt
+      lastUpdated: eggData.updatedAt,
+      rank: userRank
     })
     
   } catch (error) {
@@ -79,6 +97,7 @@ router.get('/my-eggs', authenticateToken, async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 10, 50) // Max 50 users
+    
     const leaderboard = await getEggLeaderboard(limit)
     
     res.json({
@@ -118,6 +137,7 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({ error: 'Failed to retrieve statistics' })
   }
 })
+
 
 /**
  * Search for a specific user's eggs

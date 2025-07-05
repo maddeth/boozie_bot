@@ -62,6 +62,7 @@ export function authenticateToken(req, res, next) {
   }
   
   req.user = decoded
+  console.log('🔍 Auth middleware - decoded token:', typeof decoded.sub, JSON.stringify(decoded.sub))
   logger.debug('User authenticated via middleware', { 
     userId: decoded.sub,
     email: decoded.email

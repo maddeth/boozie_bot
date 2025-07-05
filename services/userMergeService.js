@@ -3,12 +3,12 @@
  * Handles merging user accounts and their associated data (eggs, transactions, etc.)
  */
 
-import { neon } from '@neondatabase/serverless';
+import sql from './database/db.js';
 import logger from '../utils/logger.js';
 
 class UserMergeService {
-    constructor(databaseUrl) {
-        this.sql = neon(databaseUrl);
+    constructor() {
+        this.sql = sql;
     }
 
     /**

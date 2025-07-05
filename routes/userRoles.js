@@ -6,7 +6,7 @@
 import express from 'express'
 import logger from '../utils/logger.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { neon } from "@neondatabase/serverless"
+import sql from '../services/database/db.js'
 import dotenv from 'dotenv'
 import { 
   getUserBySupabaseId, 
@@ -21,8 +21,6 @@ import twitchService from '../services/twitchService.js'
 import config from '../config.json' with { type: "json" }
 
 // Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
-const sql = neon(process.env.DATABASE_URL)
 
 const router = express.Router()
 

@@ -6,8 +6,8 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
-// Initialize pool service with fallback URL
-const poolService = new PoolService(process.env.DATABASE_URL || "postgresql://boozie_storage_owner:dR1Wwru3ZQoz@ep-late-glade-a54zppk1.us-east-2.aws.neon.tech/boozie_storage?sslmode=require");
+// Initialize pool service
+const poolService = new PoolService();
 
 // Helper function to check specific roles
 const checkRole = (roles) => {
