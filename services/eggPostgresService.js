@@ -4,14 +4,12 @@
  * Replaces the Azure Table Storage implementation
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
 import dotenv from 'dotenv'
 
 // Load environment variables from .env file in parent directory
-dotenv.config({ path: '/home/maddeth/bot/.env' })
 
-const sql = neon(process.env.DATABASE_URL)
 
 /**
  * Get a user's egg count from PostgreSQL
@@ -21,25 +19,25 @@ const sql = neon(process.env.DATABASE_URL)
 export const getUserEggs = async (username) => {
   try {
     const response = await sql(
-      'SELECT id, username, eggs_amount, twitch_user_id, created_at, updated_at FROM eggs WHERE username_sanitised = $1', 
+      'SELECT id, username, eggs_amount, twitch_user_id, created_at, updated_at FROM eggs WHERE username_sanitised = $1',
       [username.toLowerCase()]
     )
-    
+
     if (response.length > 0) {
-      logger.debug('Retrieved user eggs from PostgreSQL', { 
-        username, 
-        eggs: response[0].eggs_amount 
+      logger.debug('Retrieved user eggs from PostgreSQL', {
+        username,
+        eggs: response[0].eggs_amount
       })
       return response[0]
     }
-    
+
     logger.debug('User not found in eggs table', { username })
     return null
-    
+
   } catch (error) {
-    logger.error('Failed to get user eggs from PostgreSQL', { 
-      username, 
-      error: error.message 
+    logger.error('Failed to get user eggs from PostgreSQL', {
+      username,
+      error: error.message
     })
     return null
   }
@@ -58,25 +56,25 @@ export const addEggUser = async (username, eggAmount = 0, twitchUserId = null) =
       'INSERT INTO eggs (username, username_sanitised, eggs_amount, twitch_user_id) VALUES ($1, $2, $3, $4) RETURNING id, username, eggs_amount, twitch_user_id',
       [username, username.toLowerCase(), eggAmount, twitchUserId]
     )
-    
-    logger.info('Created new egg user in PostgreSQL', { 
-      username, 
+
+    logger.info('Created new egg user in PostgreSQL', {
+      username,
       initialEggs: eggAmount,
-      userId: response[0].id 
+      userId: response[0].id
     })
-    
+
     return response[0]
-    
+
   } catch (error) {
     if (error.message.includes("duplicate key value violates unique constraint")) {
       logger.warn('Attempted to add existing egg user', { username })
       return await getUserEggs(username) // Return existing user
     }
-    
-    logger.error('Failed to add egg user to PostgreSQL', { 
-      username, 
-      eggAmount, 
-      error: error.message 
+
+    logger.error('Failed to add egg user to PostgreSQL', {
+      username,
+      eggAmount,
+      error: error.message
     })
     throw error
   }
@@ -94,24 +92,24 @@ export const updateUserEggs = async (username, newAmount) => {
       'UPDATE eggs SET eggs_amount = $1, updated_at = CURRENT_TIMESTAMP WHERE username_sanitised = $2 RETURNING id, username, eggs_amount',
       [newAmount, username.toLowerCase()]
     )
-    
+
     if (response.length > 0) {
-      logger.info('Updated user eggs in PostgreSQL', { 
-        username, 
-        newAmount, 
-        userId: response[0].id 
+      logger.info('Updated user eggs in PostgreSQL', {
+        username,
+        newAmount,
+        userId: response[0].id
       })
       return response[0]
     } else {
       logger.warn('No user found to update eggs', { username, newAmount })
       return null
     }
-    
+
   } catch (error) {
-    logger.error('Failed to update user eggs in PostgreSQL', { 
-      username, 
-      newAmount, 
-      error: error.message 
+    logger.error('Failed to update user eggs in PostgreSQL', {
+      username,
+      newAmount,
+      error: error.message
     })
     throw error
   }
@@ -131,25 +129,25 @@ export const addEggsToUser = async (username, eggsToAdd, twitchUserId = null) =>
       'UPDATE eggs SET eggs_amount = eggs_amount + $1, updated_at = CURRENT_TIMESTAMP WHERE username_sanitised = $2 RETURNING id, username, eggs_amount',
       [eggsToAdd, username.toLowerCase()]
     )
-    
+
     if (updateResult.length > 0) {
-      logger.info('Added eggs to existing user in PostgreSQL', { 
-        username, 
-        eggsAdded: eggsToAdd, 
-        newTotal: updateResult[0].eggs_amount 
+      logger.info('Added eggs to existing user in PostgreSQL', {
+        username,
+        eggsAdded: eggsToAdd,
+        newTotal: updateResult[0].eggs_amount
       })
       return updateResult[0]
     }
-    
+
     // User doesn't exist, create them with the egg amount
     logger.info('User not found, creating new egg user', { username, eggsToAdd })
     return await addEggUser(username, Math.max(0, eggsToAdd), twitchUserId)
-    
+
   } catch (error) {
-    logger.error('Failed to add eggs to user in PostgreSQL', { 
-      username, 
-      eggsToAdd, 
-      error: error.message 
+    logger.error('Failed to add eggs to user in PostgreSQL', {
+      username,
+      eggsToAdd,
+      error: error.message
     })
     throw error
   }
@@ -164,20 +162,20 @@ export const getAllEggs = async (limit = null) => {
   try {
     let query = 'SELECT id, username, eggs_amount, created_at FROM eggs ORDER BY eggs_amount DESC'
     let params = []
-    
+
     if (limit) {
       query += ' LIMIT $1'
       params = [limit]
     }
-    
+
     const response = await sql(query, params)
-    
-    logger.debug('Retrieved all eggs from PostgreSQL', { 
-      totalUsers: response.length 
+
+    logger.debug('Retrieved all eggs from PostgreSQL', {
+      totalUsers: response.length
     })
-    
+
     return response
-    
+
   } catch (error) {
     logger.error('Failed to get all eggs from PostgreSQL', { error: error.message })
     return []
@@ -192,13 +190,13 @@ export const getEggsRowCount = async () => {
   try {
     const response = await sql('SELECT COUNT(*) as count FROM eggs')
     const count = parseInt(response[0].count, 10)
-    
+
     logger.debug('Retrieved egg row count from PostgreSQL', { count })
     return count
-    
+
   } catch (error) {
-    logger.error('Failed to get eggs row count from PostgreSQL', { 
-      error: error.message 
+    logger.error('Failed to get eggs row count from PostgreSQL', {
+      error: error.message
     })
     return 0
   }
@@ -215,18 +213,18 @@ export const getTopEggHolders = async (limit = 10) => {
       'SELECT username, eggs_amount FROM eggs ORDER BY eggs_amount DESC LIMIT $1',
       [limit]
     )
-    
-    logger.debug('Retrieved top egg holders from PostgreSQL', { 
-      limit, 
-      results: response.length 
+
+    logger.debug('Retrieved top egg holders from PostgreSQL', {
+      limit,
+      results: response.length
     })
-    
+
     return response
-    
+
   } catch (error) {
-    logger.error('Failed to get top egg holders from PostgreSQL', { 
-      limit, 
-      error: error.message 
+    logger.error('Failed to get top egg holders from PostgreSQL', {
+      limit,
+      error: error.message
     })
     return []
   }
@@ -247,7 +245,7 @@ export const getEggStats = async () => {
         MIN(eggs_amount) as min_eggs
       FROM eggs
     `)
-    
+
     const result = {
       totalUsers: parseInt(stats[0].total_users, 10),
       totalEggs: parseInt(stats[0].total_eggs, 10) || 0,
@@ -255,13 +253,13 @@ export const getEggStats = async () => {
       maxEggs: parseInt(stats[0].max_eggs, 10) || 0,
       minEggs: parseInt(stats[0].min_eggs, 10) || 0
     }
-    
+
     logger.debug('Retrieved egg statistics from PostgreSQL', result)
     return result
-    
+
   } catch (error) {
-    logger.error('Failed to get egg statistics from PostgreSQL', { 
-      error: error.message 
+    logger.error('Failed to get egg statistics from PostgreSQL', {
+      error: error.message
     })
     return {
       totalUsers: 0,
@@ -284,7 +282,7 @@ export const deleteEggUser = async (username) => {
       'DELETE FROM eggs WHERE username_sanitised = $1 RETURNING username',
       [username.toLowerCase()]
     )
-    
+
     if (response.length > 0) {
       logger.warn('Deleted egg user from PostgreSQL', { username })
       return true
@@ -292,11 +290,11 @@ export const deleteEggUser = async (username) => {
       logger.warn('No user found to delete', { username })
       return false
     }
-    
+
   } catch (error) {
-    logger.error('Failed to delete egg user from PostgreSQL', { 
-      username, 
-      error: error.message 
+    logger.error('Failed to delete egg user from PostgreSQL', {
+      username,
+      error: error.message
     })
     return false
   }

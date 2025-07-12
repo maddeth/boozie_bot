@@ -3,14 +3,12 @@
  * Manages user eggs using PostgreSQL database linked to Twitch IDs
  */
 
-import { neon } from "@neondatabase/serverless"
+import sql from './database/db.js'
 import logger from '../utils/logger.js'
 import dotenv from 'dotenv'
 
 // Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
 
-const sql = neon(process.env.DATABASE_URL)
 
 /**
  * Get user's egg count by Twitch user ID or username
@@ -24,7 +22,7 @@ export const getUserEggs = async (identifier) => {
       'SELECT * FROM eggs WHERE twitch_user_id = $1',
       [identifier]
     )
-    
+
     // If not found by ID, try by username (fallback for legacy data)
     if (result.length === 0) {
       result = await sql(
@@ -32,12 +30,12 @@ export const getUserEggs = async (identifier) => {
         [identifier]
       )
     }
-    
+
     if (result.length > 0) {
-      logger.debug('Retrieved user eggs', { 
-        identifier, 
+      logger.debug('Retrieved user eggs', {
+        identifier,
         eggs: result[0].eggs_amount,
-        twitchUserId: result[0].twitch_user_id 
+        twitchUserId: result[0].twitch_user_id
       })
       return {
         id: result[0].id,
@@ -49,9 +47,9 @@ export const getUserEggs = async (identifier) => {
         updatedAt: result[0].updated_at
       }
     }
-    
+
     return null
-    
+
   } catch (error) {
     logger.error('Failed to get user eggs', { identifier, error: error.message })
     return null
@@ -68,10 +66,10 @@ export const getUserEggs = async (identifier) => {
 export const createOrUpdateUserEggs = async (twitchUserId, username, eggAmount = 0) => {
   try {
     const usernameSanitised = username.toLowerCase()
-    
+
     // Check if user already exists (by Twitch ID or username)
     const existingUser = await getUserEggs(twitchUserId)
-    
+
     if (existingUser) {
       // Update existing user with current username (in case they changed it)
       const result = await sql(
@@ -81,17 +79,17 @@ export const createOrUpdateUserEggs = async (twitchUserId, username, eggAmount =
          RETURNING *`,
         [username, usernameSanitised, twitchUserId]
       )
-      
-      logger.info('Updated existing egg user with current username', { 
-        twitchUserId, 
+
+      logger.info('Updated existing egg user with current username', {
+        twitchUserId,
         username,
         previousUsername: existingUser.username,
         eggs: result[0].eggs_amount
       })
-      
+
       return result[0]
     }
-    
+
     // Create new user
     const result = await sql(
       `INSERT INTO eggs (twitch_user_id, username, username_sanitised, eggs_amount) 
@@ -99,21 +97,21 @@ export const createOrUpdateUserEggs = async (twitchUserId, username, eggAmount =
        RETURNING *`,
       [twitchUserId, username, usernameSanitised, eggAmount]
     )
-    
-    logger.info('Created new egg user', { 
-      twitchUserId, 
-      username, 
-      initialEggs: eggAmount 
+
+    logger.info('Created new egg user', {
+      twitchUserId,
+      username,
+      initialEggs: eggAmount
     })
-    
+
     return result[0]
-    
+
   } catch (error) {
-    logger.error('Failed to create or update user eggs', { 
-      twitchUserId, 
-      username, 
-      eggAmount, 
-      error: error.message 
+    logger.error('Failed to create or update user eggs', {
+      twitchUserId,
+      username,
+      eggAmount,
+      error: error.message
     })
     return null
   }
@@ -130,7 +128,7 @@ export const updateUserEggs = async (twitchUserId, username, eggChange) => {
   try {
     // Get current egg data
     const currentData = await getUserEggs(twitchUserId) || await getUserEggs(username)
-    
+
     if (!currentData) {
       // User doesn't exist, create them with the egg change amount (if positive)
       if (eggChange > 0) {
@@ -140,20 +138,20 @@ export const updateUserEggs = async (twitchUserId, username, eggChange) => {
         return null
       }
     }
-    
+
     const newAmount = currentData.eggsAmount + eggChange
-    
+
     // Prevent negative eggs
     if (newAmount < 0) {
-      logger.warn('Insufficient eggs for transaction', { 
-        twitchUserId, 
-        username, 
-        currentEggs: currentData.eggsAmount, 
-        requestedChange: eggChange 
+      logger.warn('Insufficient eggs for transaction', {
+        twitchUserId,
+        username,
+        currentEggs: currentData.eggsAmount,
+        requestedChange: eggChange
       })
       return { error: 'insufficient_eggs', currentEggs: currentData.eggsAmount }
     }
-    
+
     // Update eggs amount
     const result = await sql(
       `UPDATE eggs 
@@ -162,27 +160,27 @@ export const updateUserEggs = async (twitchUserId, username, eggChange) => {
        RETURNING *`,
       [newAmount, username, username.toLowerCase(), twitchUserId, currentData.id]
     )
-    
+
     if (result.length > 0) {
-      logger.info('Updated user eggs', { 
-        twitchUserId, 
-        username, 
-        previousAmount: currentData.eggsAmount, 
-        change: eggChange, 
-        newAmount: newAmount 
+      logger.info('Updated user eggs', {
+        twitchUserId,
+        username,
+        previousAmount: currentData.eggsAmount,
+        change: eggChange,
+        newAmount: newAmount
       })
-      
+
       return result[0]
     }
-    
+
     return null
-    
+
   } catch (error) {
-    logger.error('Failed to update user eggs', { 
-      twitchUserId, 
-      username, 
-      eggChange, 
-      error: error.message 
+    logger.error('Failed to update user eggs', {
+      twitchUserId,
+      username,
+      eggChange,
+      error: error.message
     })
     return null
   }
@@ -197,17 +195,17 @@ export const updateUserEggs = async (twitchUserId, username, eggChange) => {
 export const getAllUserEggs = async (limit = 100, orderBy = 'eggs') => {
   try {
     const orderColumn = orderBy === 'username' ? 'username' : 'eggs_amount DESC'
-    
+
     const result = await sql(
       `SELECT * FROM eggs 
        ORDER BY ${orderColumn === 'username' ? 'username ASC' : 'eggs_amount DESC'} 
        LIMIT $1`,
       [limit]
     )
-    
+
     logger.debug('Retrieved all user eggs', { count: result.length, orderBy })
     return result
-    
+
   } catch (error) {
     logger.error('Failed to get all user eggs', { error: error.message })
     return []
@@ -229,10 +227,10 @@ export const getEggLeaderboard = async (limit = 10) => {
        LIMIT $1`,
       [limit]
     )
-    
+
     logger.debug('Retrieved egg leaderboard', { count: result.length, limit })
     return result
-    
+
   } catch (error) {
     logger.error('Failed to get egg leaderboard', { error: error.message })
     return []
@@ -253,17 +251,17 @@ export const getEggStats = async () => {
         MAX(eggs_amount) as max_eggs
       FROM eggs
     `)
-    
+
     const result = {
       totalUsers: parseInt(stats[0].total_users, 10),
       totalEggs: parseInt(stats[0].total_eggs, 10) || 0,
       averageEggs: parseFloat(stats[0].average_eggs) || 0,
       maxEggs: parseInt(stats[0].max_eggs, 10) || 0
     }
-    
+
     logger.debug('Retrieved egg statistics', result)
     return result
-    
+
   } catch (error) {
     logger.error('Failed to get egg statistics', { error: error.message })
     return {
@@ -285,24 +283,24 @@ export const getEggStats = async () => {
  */
 export const eggUpdateCommand = async (userToUpdate, eggsToAdd, printToChat, sendChatMessage = null, twitchUserId = null) => {
   const result = await updateUserEggs(twitchUserId || userToUpdate, userToUpdate, eggsToAdd)
-  
+
   if (!result) {
     if (sendChatMessage) {
       sendChatMessage(`Failed to update eggs for ${userToUpdate}`)
     }
     return
   }
-  
+
   if (result.error === 'insufficient_eggs') {
     if (sendChatMessage) {
       sendChatMessage("You don't have enough eggs")
     }
     return
   }
-  
+
   if (printToChat && sendChatMessage) {
     const newAmount = result.eggs_amount
-    
+
     if (eggsToAdd === 1) {
       sendChatMessage(`Added ${eggsToAdd} egg, ${userToUpdate} now has ${newAmount} eggs`)
     } else if (eggsToAdd > 1) {

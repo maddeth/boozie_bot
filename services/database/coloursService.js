@@ -1,7 +1,6 @@
-import { neon } from "@neondatabase/serverless"
+import sql from './db.js'
 import logger from '../../utils/logger.js'
 
-const sql = neon(process.env.DATABASE_URL)
 
 export const coloursRowCount2 = async () => {
   try {
@@ -20,7 +19,7 @@ export async function getRandomColourByName(req) {
     if (!sanitizedReq || sanitizedReq.length === 0) {
       return false
     }
-    
+
     const colourMap = await sql('SELECT colourname FROM colours WHERE colourname ILIKE $1', [`%${sanitizedReq}%`])
     if (colourMap.length > 0) {
       let randomColour = colourMap[Math.floor(Math.random() * colourMap.length)]
@@ -50,7 +49,7 @@ export const getByColourName = async (req) => {
     if (!sanitizedReq || sanitizedReq.length === 0) {
       return []
     }
-    
+
     const response = await sql('SELECT colourname, hex_value FROM colours WHERE colourname ILIKE $1', [`%${sanitizedReq}%`])
     return response
   } catch (error) {

@@ -6,10 +6,10 @@
 import express from 'express'
 import logger from '../utils/logger.js'
 import { authenticateToken } from '../middleware/auth.js'
-import { neon } from "@neondatabase/serverless"
+import sql from '../services/database/db.js'
 import dotenv from 'dotenv'
-import { 
-  getUserBySupabaseId, 
+import {
+  getUserBySupabaseId,
   getUserByTwitchId,
   getModerators,
   getUserStats,
@@ -21,8 +21,6 @@ import twitchService from '../services/twitchService.js'
 import config from '../config.json' with { type: "json" }
 
 // Load environment variables
-dotenv.config({ path: '/home/maddeth/bot/.env' })
-const sql = neon(process.env.DATABASE_URL)
 
 const router = express.Router()
 
@@ -33,17 +31,17 @@ const router = express.Router()
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
-    
+
     // Get user from database using Supabase ID
     const user = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!user) {
       return res.status(404).json({
         error: 'User not found',
         message: 'No user record found. Please visit the stream to create your profile.'
       })
     }
-    
+
     // Return user role information
     const roleInfo = {
       username: user.username,
@@ -60,21 +58,21 @@ router.get('/me', authenticateToken, async (req, res) => {
       moderatorSince: user.moderator_since,
       lastSeen: user.last_seen
     }
-    
-    logger.info('User role info requested', { 
+
+    logger.info('User role info requested', {
       supabaseUserId,
       username: user.username,
       roles: roleInfo.roles
     })
-    
+
     res.json(roleInfo)
-    
+
   } catch (error) {
-    logger.error('Error getting user role info', { 
+    logger.error('Error getting user role info', {
       supabaseUserId: req.user?.sub,
-      error: error.message 
+      error: error.message
     })
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to retrieve user information'
     })
@@ -89,25 +87,25 @@ router.get('/me/moderator', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const user = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!user) {
       return res.status(404).json({
         isModerator: false,
         message: 'User not found'
       })
     }
-    
+
     res.json({
       isModerator: user.is_moderator,
       moderatorSince: user.moderator_since
     })
-    
+
   } catch (error) {
-    logger.error('Error checking moderator status', { 
+    logger.error('Error checking moderator status', {
       supabaseUserId: req.user?.sub,
-      error: error.message 
+      error: error.message
     })
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       isModerator: false
     })
@@ -122,7 +120,7 @@ router.get('/moderators', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     // Check if requesting user is a moderator
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
@@ -130,9 +128,9 @@ router.get('/moderators', authenticateToken, async (req, res) => {
         message: 'Moderator privileges required'
       })
     }
-    
+
     const moderators = await getModerators()
-    
+
     // Return sanitized moderator list
     const moderatorList = moderators.map(mod => ({
       username: mod.username,
@@ -140,23 +138,23 @@ router.get('/moderators', authenticateToken, async (req, res) => {
       moderatorSince: mod.moderator_since,
       lastSeen: mod.last_seen
     }))
-    
-    logger.info('Moderator list requested', { 
+
+    logger.info('Moderator list requested', {
       requestedBy: requestingUser.username,
       moderatorCount: moderatorList.length
     })
-    
+
     res.json({
       moderators: moderatorList,
       count: moderatorList.length
     })
-    
+
   } catch (error) {
-    logger.error('Error getting moderators list', { 
+    logger.error('Error getting moderators list', {
       supabaseUserId: req.user?.sub,
-      error: error.message 
+      error: error.message
     })
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to retrieve moderators list'
     })
@@ -171,7 +169,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     // Check if requesting user is a moderator
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
@@ -179,22 +177,22 @@ router.get('/stats', authenticateToken, async (req, res) => {
         message: 'Moderator privileges required'
       })
     }
-    
+
     const stats = await getUserStats()
-    
-    logger.info('User statistics requested', { 
+
+    logger.info('User statistics requested', {
       requestedBy: requestingUser.username,
       stats
     })
-    
+
     res.json(stats)
-    
+
   } catch (error) {
-    logger.error('Error getting user statistics', { 
+    logger.error('Error getting user statistics', {
       supabaseUserId: req.user?.sub,
-      error: error.message 
+      error: error.message
     })
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to retrieve user statistics'
     })
@@ -208,27 +206,27 @@ router.get('/stats', authenticateToken, async (req, res) => {
 router.get('/check/:twitchUserId', async (req, res) => {
   try {
     const { twitchUserId } = req.params
-    
+
     if (!twitchUserId) {
       return res.status(400).json({
         error: 'Bad request',
         message: 'Twitch user ID is required'
       })
     }
-    
+
     const isModeratorStatus = await isModerator(twitchUserId)
-    
+
     res.json({
       twitchUserId,
       isModerator: isModeratorStatus
     })
-    
+
   } catch (error) {
-    logger.error('Error checking specific user moderator status', { 
+    logger.error('Error checking specific user moderator status', {
       twitchUserId: req.params.twitchUserId,
-      error: error.message 
+      error: error.message
     })
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       isModerator: false
     })
@@ -243,39 +241,39 @@ router.post('/link', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const { twitchUsername, email } = req.body
-    
+
     if (!twitchUsername) {
       return res.status(400).json({
         error: 'Bad request',
         message: 'Twitch username is required'
       })
     }
-    
+
     // Find existing user by Twitch username
     const existingUsers = await sql(
       'SELECT * FROM users WHERE LOWER(username) = LOWER($1)',
       [twitchUsername]
     )
-    
+
     if (existingUsers.length === 0) {
       return res.status(404).json({
         error: 'User not found',
         message: 'No Twitch user found with that username'
       })
     }
-    
+
     const twitchUser = existingUsers[0]
-    
+
     // Link the accounts
     const success = await linkSupabaseUser(twitchUser.twitch_user_id, supabaseUserId, email)
-    
+
     if (success) {
       logger.info('Linked Supabase user to Twitch user', {
         twitchUsername,
         twitchUserId: twitchUser.twitch_user_id,
         supabaseUserId
       })
-      
+
       res.json({
         success: true,
         message: 'Accounts linked successfully',
@@ -291,7 +289,7 @@ router.post('/link', authenticateToken, async (req, res) => {
         message: 'Failed to link accounts'
       })
     }
-    
+
   } catch (error) {
     logger.error('Error linking accounts', {
       supabaseUserId: req.user?.sub,
@@ -311,34 +309,34 @@ router.post('/link', authenticateToken, async (req, res) => {
 router.post('/me/refresh', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
-    
+
     // Get user from database
     const user = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!user) {
       return res.status(404).json({
         error: 'User not found',
         message: 'No user record found. Please visit the stream to create your profile.'
       })
     }
-    
+
     // Sync this user's moderator status with Twitch
     const syncResult = await syncSingleModerator(
-      twitchService, 
-      config.myChannelUserId, 
+      twitchService,
+      config.myChannelUserId,
       user.username
     )
-    
+
     if (syncResult.success) {
       logger.info('User moderator status refreshed', {
         username: user.username,
         isModerator: syncResult.isModerator,
         supabaseUserId
       })
-      
+
       // Get updated user info
       const updatedUser = await getUserBySupabaseId(supabaseUserId)
-      
+
       res.json({
         success: true,
         message: 'Moderator status refreshed successfully',
@@ -363,7 +361,7 @@ router.post('/me/refresh', authenticateToken, async (req, res) => {
         message: syncResult.error || 'Failed to sync moderator status'
       })
     }
-    
+
   } catch (error) {
     logger.error('Error refreshing moderator status', {
       supabaseUserId: req.user?.sub,
@@ -385,17 +383,17 @@ router.put('/admin/:username', authenticateToken, async (req, res) => {
     const supabaseUserId = req.user.sub
     const { username } = req.params
     const { isAdmin } = req.body
-    
+
     // Check if requesting user is a superadmin
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_superadmin) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Superadmin privileges required'
       })
     }
-    
+
     // Validate input
     if (typeof isAdmin !== 'boolean') {
       return res.status(400).json({
@@ -403,7 +401,7 @@ router.put('/admin/:username', authenticateToken, async (req, res) => {
         message: 'isAdmin must be a boolean value'
       })
     }
-    
+
     // Update the target user's admin status
     const result = await sql(
       `UPDATE users 
@@ -412,26 +410,26 @@ router.put('/admin/:username', authenticateToken, async (req, res) => {
        RETURNING username, is_admin, is_moderator`,
       [isAdmin, username]
     )
-    
+
     if (result.length === 0) {
       return res.status(404).json({
         error: 'User not found',
         message: `User ${username} not found in database`
       })
     }
-    
+
     logger.info('Bot admin status updated', {
       updatedBy: requestingUser.username,
       targetUser: username,
       isAdmin: isAdmin
     })
-    
+
     res.json({
       success: true,
       message: `${username} bot admin status updated`,
       user: result[0]
     })
-    
+
   } catch (error) {
     logger.error('Error updating bot admin status', {
       supabaseUserId: req.user?.sub,
@@ -453,7 +451,7 @@ router.get('/admins', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     // Check if requesting user is at least a moderator
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
@@ -461,24 +459,24 @@ router.get('/admins', authenticateToken, async (req, res) => {
         message: 'Moderator privileges required'
       })
     }
-    
+
     const admins = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, last_seen
       FROM users
       WHERE is_admin = true OR is_superadmin = true
       ORDER BY is_superadmin DESC, username ASC
     `)
-    
+
     logger.info('Bot admins list requested', {
       requestedBy: requestingUser.username,
       adminCount: admins.length
     })
-    
+
     res.json({
       admins,
       count: admins.length
     })
-    
+
   } catch (error) {
     logger.error('Error getting bot admins list', {
       supabaseUserId: req.user?.sub,
@@ -501,14 +499,14 @@ router.get('/stats/users', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Moderator privileges required'
       })
     }
-    
+
     const users = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, is_vip, 
              is_subscriber, subscription_tier, last_seen, created_at
@@ -516,7 +514,7 @@ router.get('/stats/users', authenticateToken, async (req, res) => {
       ORDER BY last_seen DESC NULLS LAST
       LIMIT 100
     `)
-    
+
     res.json({ users })
   } catch (error) {
     logger.error('Error getting users list', { error: error.message })
@@ -529,14 +527,14 @@ router.get('/stats/moderators', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Moderator privileges required'
       })
     }
-    
+
     const users = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, is_vip, 
              is_subscriber, subscription_tier, last_seen, created_at, moderator_since
@@ -544,7 +542,7 @@ router.get('/stats/moderators', authenticateToken, async (req, res) => {
       WHERE is_moderator = true
       ORDER BY moderator_since ASC NULLS LAST
     `)
-    
+
     res.json({ users })
   } catch (error) {
     logger.error('Error getting moderators list', { error: error.message })
@@ -557,14 +555,14 @@ router.get('/stats/subscribers', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Moderator privileges required'
       })
     }
-    
+
     const users = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, is_vip, 
              is_subscriber, subscription_tier, last_seen, created_at
@@ -572,7 +570,7 @@ router.get('/stats/subscribers', authenticateToken, async (req, res) => {
       WHERE is_subscriber = true
       ORDER BY subscription_tier DESC, last_seen DESC
     `)
-    
+
     res.json({ users })
   } catch (error) {
     logger.error('Error getting subscribers list', { error: error.message })
@@ -585,14 +583,14 @@ router.get('/stats/registered', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Moderator privileges required'
       })
     }
-    
+
     const users = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, is_vip, 
              is_subscriber, subscription_tier, last_seen, created_at
@@ -600,7 +598,7 @@ router.get('/stats/registered', authenticateToken, async (req, res) => {
       WHERE supabase_user_id IS NOT NULL
       ORDER BY created_at DESC
     `)
-    
+
     res.json({ users })
   } catch (error) {
     logger.error('Error getting registered users list', { error: error.message })
@@ -613,14 +611,14 @@ router.get('/stats/active-weekly', authenticateToken, async (req, res) => {
   try {
     const supabaseUserId = req.user.sub
     const requestingUser = await getUserBySupabaseId(supabaseUserId)
-    
+
     if (!requestingUser || !requestingUser.is_moderator) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Moderator privileges required'
       })
     }
-    
+
     const users = await sql(`
       SELECT username, display_name, is_moderator, is_admin, is_superadmin, is_vip, 
              is_subscriber, subscription_tier, last_seen, created_at
@@ -628,7 +626,7 @@ router.get('/stats/active-weekly', authenticateToken, async (req, res) => {
       WHERE last_seen > NOW() - INTERVAL '7 days'
       ORDER BY last_seen DESC
     `)
-    
+
     res.json({ users })
   } catch (error) {
     logger.error('Error getting active users list', { error: error.message })

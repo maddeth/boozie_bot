@@ -1,0 +1,30 @@
+{
+  "channels": ["your_twitch_channel"],
+  "username": "your_bot_username",
+  "clientId": "your_twitch_client_id",
+  "redirectUri": "https://your-domain.com/auth/callback",
+  "scopes": [
+    "chat:read",
+    "chat:edit",
+    "channel:moderate",
+    "channel:read:subscriptions",
+    "channel:read:hype_train",
+    "channel:read:redemptions",
+    "moderator:read:followers"
+  ],
+  "port": 3000,
+  "websocketPort": 3001,
+  "logLevel": "info",
+  "maxReconnectAttempts": 10,
+  "reconnectInterval": 30000,
+  "commandPrefix": "!",
+  "defaultCooldown": 5000,
+  "eggDropRate": 0.1,
+  "eggDropAmount": 1,
+  "enableWebInterface": true,
+  "enableTwitchEventSub": true,
+  "cors": {
+    "origins": ["https://your-domain.com"],
+    "credentials": true
+  }
+}
