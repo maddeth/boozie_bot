@@ -24,6 +24,34 @@ class PoolService {
                 finalPoolName = `pool_${sanitisedName}`;
             }
 
+            // Check if pool already exists
+            const existingPool = await this.sql`
+                SELECT id, pool_name, is_active 
+                FROM pools 
+                WHERE pool_name = ${poolName}
+            `;
+
+            if (existingPool.length > 0) {
+                const pool = existingPool[0];
+                if (pool.is_active) {
+                    throw new Error('Pool name already exists');
+                } else {
+                    // Reactivate the inactive pool
+                    const result = await this.sql`
+                        UPDATE pools 
+                        SET is_active = true,
+                            description = ${description},
+                            created_by_twitch_id = ${creatorTwitchId},
+                            created_by_username = ${creatorUsername}
+                        WHERE id = ${pool.id}
+                        RETURNING *
+                    `;
+                    logger.info(`Pool reactivated: ${finalPoolName} by ${creatorUsername}`);
+                    return result[0];
+                }
+            }
+
+            // Create new pool
             const result = await this.sql`
                 INSERT INTO pools (
                     pool_name, 
@@ -81,44 +109,44 @@ class PoolService {
                 WHERE pool_name_sanitised = ${searchName}
             `;
 
-            if (poolResult.rows.length === 0) {
+            if (poolResult.length === 0) {
                 throw new Error('Pool not found');
             }
 
-            const pool = poolResult.rows[0];
+            const pool = poolResult[0];
             if (!pool.is_active) {
                 throw new Error('Pool is not active');
             }
 
             // Check donor has enough eggs
-            const donorResult = await client.query(`
+            const donorResult = await this.sql`
                 SELECT eggs_amount 
                 FROM eggs 
-                WHERE twitch_user_id = $1 OR username_sanitised = $2
+                WHERE twitch_user_id = ${donorTwitchId} OR username_sanitised = ${donorUsername.toLowerCase()}
                 ORDER BY twitch_user_id DESC NULLS LAST
                 LIMIT 1
-            `, [donorTwitchId, donorUsername.toLowerCase()]);
+            `;
 
-            if (donorResult.rows.length === 0 || donorResult.rows[0].eggs_amount < amount) {
+            if (donorResult.length === 0 || donorResult[0].eggs_amount < amount) {
                 throw new Error('Insufficient eggs');
             }
 
             // Deduct eggs from donor
-            await client.query(`
+            await this.sql`
                 UPDATE eggs 
-                SET eggs_amount = eggs_amount - $1
-                WHERE twitch_user_id = $2 OR username_sanitised = $3
-            `, [amount, donorTwitchId, donorUsername.toLowerCase()]);
+                SET eggs_amount = eggs_amount - ${amount}
+                WHERE twitch_user_id = ${donorTwitchId} OR username_sanitised = ${donorUsername.toLowerCase()}
+            `;
 
             // Add eggs to pool
-            await client.query(`
+            await this.sql`
                 UPDATE pools 
-                SET eggs_amount = eggs_amount + $1
-                WHERE id = $2
-            `, [amount, pool.id]);
+                SET eggs_amount = eggs_amount + ${amount}
+                WHERE id = ${pool.id}
+            `;
 
             // Record transaction
-            await client.query(`
+            await this.sql`
                 INSERT INTO pool_transactions (
                     pool_id, 
                     donor_twitch_id, 
@@ -126,8 +154,8 @@ class PoolService {
                     eggs_amount, 
                     transaction_type
                 )
-                VALUES ($1, $2, $3, $4, 'donation')
-            `, [pool.id, donorTwitchId, donorUsername, amount]);
+                VALUES (${pool.id}, ${donorTwitchId}, ${donorUsername}, ${amount}, 'donation')
+            `;
 
             await this.sql`COMMIT`;
 
@@ -140,11 +168,9 @@ class PoolService {
             };
 
         } catch (error) {
-            await client.query('ROLLBACK');
+            await this.sql`ROLLBACK`;
             logger.error('Error donating to pool:', error);
             throw error;
-        } finally {
-            client.release();
         }
     }
 
@@ -230,6 +256,64 @@ class PoolService {
             return result;
         } catch (error) {
             logger.error('Error getting recent donations:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a pool (mark as inactive)
+     * @param {string} poolName - Name of the pool to delete
+     * @param {string} adminTwitchId - Admin's Twitch ID
+     * @param {string} adminUsername - Admin's username
+     */
+    async deletePool(poolName, adminTwitchId, adminUsername) {
+        try {
+            const sanitisedName = poolName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            let searchName = sanitisedName;
+            
+            if (!sanitisedName.startsWith('pool_') && !sanitisedName.startsWith('community_')) {
+                searchName = `pool_${sanitisedName}`;
+            }
+
+            // Check if pool exists
+            const poolResult = await this.sql`
+                SELECT id, pool_name, eggs_amount, is_active 
+                FROM pools 
+                WHERE pool_name_sanitised = ${searchName}
+            `;
+
+            if (poolResult.length === 0) {
+                throw new Error('Pool not found');
+            }
+
+            const pool = poolResult[0];
+            
+            if (!pool.is_active) {
+                throw new Error('Pool is already deleted');
+            }
+
+            // Mark pool as inactive
+            await this.sql`
+                UPDATE pools 
+                SET is_active = false
+                WHERE id = ${pool.id}
+            `;
+
+            logger.info(`Pool deleted by ${adminUsername}`, { 
+                poolName: searchName, 
+                poolId: pool.id,
+                eggsAmount: pool.eggs_amount 
+            });
+            
+            return {
+                success: true,
+                poolName: pool.pool_name,
+                poolNameSanitised: searchName,
+                eggsAmount: pool.eggs_amount
+            };
+
+        } catch (error) {
+            logger.error('Error deleting pool:', error);
             throw error;
         }
     }

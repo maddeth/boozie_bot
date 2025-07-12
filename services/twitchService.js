@@ -70,31 +70,38 @@ class TwitchService {
       this.api = new ApiClient({ authProvider: this.authProvider })
 
       // Setup chat message handler
-      this.chatClient.onMessage(async (channel, user, message) => {
-        logger.debug('Chat message received', { 
-          userType: typeof user,
-          userProperties: Object.keys(user || {}),
-          userName: user?.userName,
-          displayName: user?.displayName,
-          userId: user?.userId,
-          message: message.substring(0, 50) 
+      this.chatClient.onMessage(async (channel, user, text, msg) => {
+        // Extract real-time user info from message context
+        let userObj = null
+        let displayName = user
+        
+        if (msg && typeof msg === 'object' && msg.userInfo) {
+          userObj = {
+            userId: msg.userInfo.userId,
+            userName: msg.userInfo.userName, 
+            displayName: msg.userInfo.displayName,
+            isMod: msg.userInfo.isMod,
+            isVip: msg.userInfo.isVip, 
+            isSubscriber: msg.userInfo.isSubscriber,
+            isBroadcaster: msg.userInfo.isBroadcaster,
+            badges: msg.badges
+          }
+          displayName = msg.userInfo.displayName || user
+        }
+        
+        logger.debug('Processing chat message', { 
+          user: displayName, 
+          message: text.substring(0, 50),
+          hasRealTimeData: !!userObj
         })
         
-        // Skip processing messages from the bot itself (if we can identify them)
-        if (user?.userId === this.boozieBotUserID) {
-          logger.debug('Skipping bot\'s own message', { botUserId: this.boozieBotUserID })
+        // Skip processing messages from the bot itself
+        if (userObj?.userId === this.boozieBotUserID || user === 'boozie_bot') {
+          logger.debug('Skipping bot\'s own message', { user })
           return
         }
         
-        // Handle case where user is just a string (username)
-        if (typeof user === 'string') {
-          await this.processMessage(user, message, null)
-        } else {
-          // Handle case where user is an object with properties
-          // user.displayName should be the properly cased display name
-          const displayName = user.displayName || user.userName || user.name || user
-          await this.processMessage(displayName, message, user)
-        }
+        await this.processMessage(displayName, text, userObj)
       })
 
       await this.chatClient.connect()
@@ -364,7 +371,7 @@ class TwitchService {
           }
           
           // Add built-in commands
-          commandMessage += ' | Built-in: !eggs, !topeggs, !quote, !pool, !donate, !pools, !createpool (moderator), !mergeeggs (moderator)'
+          commandMessage += ' | Built-in: !eggs, !topeggs, !quote, !pool, !donate, !pools, !createpool (moderator), !deletepool (moderator), !mergeeggs (moderator)'
           
           // Truncate if too long for Twitch chat (500 char limit)
           if (commandMessage.length > 450) {
@@ -486,10 +493,32 @@ class TwitchService {
       }
       
       try {
-        const userInfo = await this.getUserInfo(displayName)
+        // Get Twitch user ID from various sources
+        let twitchUserId = null
+        
+        if (userObj && userObj.userId) {
+          twitchUserId = userObj.userId
+        } else if (this.chatters.has(displayName)) {
+          twitchUserId = this.chatters.get(displayName)
+        } else {
+          try {
+            const twitchUser = await this.api.users.getUserByName(displayName.toLowerCase())
+            if (twitchUser) {
+              twitchUserId = twitchUser.id
+            }
+          } catch (error) {
+            logger.error('Failed to fetch Twitch user ID for donation', { displayName, error })
+          }
+        }
+        
+        if (!twitchUserId) {
+          this.sendChatMessage(`${displayName} - Could not verify your Twitch account. Please try again.`)
+          return
+        }
+        
         const result = await this.poolService.donateToPool(
           poolName,
-          userInfo.twitchUserId || userInfo.userId,
+          twitchUserId,
           displayName,
           amount
         )
@@ -531,10 +560,40 @@ class TwitchService {
     }
 
     if (message.startsWith("!createpool ")) {
-      const userInfo = await this.getUserInfo(displayName)
+      // Get Twitch user ID from various sources
+      let twitchUserId = null
       
-      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+      // First priority: userObj from chat message
+      if (userObj && userObj.userId) {
+        twitchUserId = userObj.userId
+      } 
+      // Second priority: chatters list
+      else if (this.chatters.has(displayName)) {
+        twitchUserId = this.chatters.get(displayName)
+      }
+      // Third priority: try to fetch from Twitch API
+      else {
+        try {
+          const twitchUser = await this.api.users.getUserByName(displayName.toLowerCase())
+          if (twitchUser) {
+            twitchUserId = twitchUser.id
+          }
+        } catch (error) {
+          logger.error('Failed to fetch Twitch user ID for pool creation', { displayName, error })
+        }
+      }
+      
+      // Check permissions
+      const permissions = await this.getPermissions(displayName, userObj)
+      
+      if (!permissions.isModerator && !permissions.isBroadcaster) {
         this.sendChatMessage(`${displayName} - Only moderators can create pools`)
+        return
+      }
+      
+      if (!twitchUserId) {
+        this.sendChatMessage(`${displayName} - Could not verify your Twitch account. Please try again.`)
+        logger.error('No Twitch user ID available for pool creation', { displayName })
         return
       }
       
@@ -547,11 +606,16 @@ class TwitchService {
         return
       }
       
+      logger.debug('Creating pool', {
+        poolName,
+        displayName
+      })
+      
       try {
         const pool = await this.poolService.createPool(
           poolName,
           description,
-          userInfo.twitchUserId || userInfo.userId,
+          twitchUserId,
           displayName
         )
         
@@ -567,10 +631,77 @@ class TwitchService {
       return
     }
 
-    if (message.startsWith("!mergeeggs ")) {
-      const userInfo = await this.getUserInfo(displayName)
+    if (message.startsWith("!deletepool ")) {
+      // Get Twitch user ID from various sources
+      let twitchUserId = null
       
-      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+      if (userObj && userObj.userId) {
+        twitchUserId = userObj.userId
+      } else if (this.chatters.has(displayName)) {
+        twitchUserId = this.chatters.get(displayName)
+      } else {
+        try {
+          const twitchUser = await this.api.users.getUserByName(displayName.toLowerCase())
+          if (twitchUser) {
+            twitchUserId = twitchUser.id
+          }
+        } catch (error) {
+          logger.error('Failed to fetch Twitch user ID for pool deletion', { displayName, error })
+        }
+      }
+      
+      // Check permissions
+      const permissions = await this.getPermissions(displayName, userObj)
+      
+      if (!permissions.isModerator && !permissions.isBroadcaster) {
+        this.sendChatMessage(`${displayName} - Only moderators can delete pools`)
+        return
+      }
+      
+      if (!twitchUserId) {
+        this.sendChatMessage(`${displayName} - Could not verify your Twitch account. Please try again.`)
+        logger.error('No Twitch user ID available for pool deletion', { displayName })
+        return
+      }
+      
+      const args = message.substring(12).trim()
+      const poolName = args.split(' ')[0]
+      
+      if (!poolName) {
+        this.sendChatMessage(`${displayName} - Usage: !deletepool <poolname>`)
+        return
+      }
+      
+      try {
+        const result = await this.poolService.deletePool(
+          poolName,
+          twitchUserId,
+          displayName
+        )
+        
+        this.sendChatMessage(`${displayName} deleted pool "${result.poolName}" (had ${result.eggsAmount.toLocaleString()} eggs)`)
+        logger.info('Pool deleted via chat command', { 
+          poolName: result.poolNameSanitised, 
+          deletedBy: displayName,
+          eggsAmount: result.eggsAmount
+        })
+      } catch (error) {
+        if (error.message === 'Pool not found') {
+          this.sendChatMessage(`${displayName} - Pool "${poolName}" not found`)
+        } else if (error.message === 'Pool is already deleted') {
+          this.sendChatMessage(`${displayName} - Pool "${poolName}" is already deleted`)
+        } else {
+          this.sendChatMessage(`${displayName} - Could not delete pool`)
+          logger.error('Failed to delete pool', { user: displayName, poolName, error })
+        }
+      }
+      return
+    }
+
+    if (message.startsWith("!mergeeggs ")) {
+      const permissions = await this.getPermissions(displayName, userObj)
+      
+      if (!permissions.isModerator && !permissions.isBroadcaster) {
         this.sendChatMessage(`${displayName} - Only moderators can merge user eggs`)
         return
       }
@@ -600,7 +731,7 @@ class TwitchService {
         }
         
         // Execute the merge
-        const adminTwitchId = userInfo.twitchUserId || userInfo.userId || displayName
+        const adminTwitchId = permissions.twitchUserId || displayName
         const result = await this.userMergeService.mergeUserEggs(
           fromUser,
           toUser,
@@ -667,9 +798,9 @@ class TwitchService {
 
     // Add quote command (moderator only)
     if (message.toLowerCase().startsWith('!addquote ')) {
-      const userInfo = await this.getUserInfo(displayName)
+      const permissions = await this.getPermissions(displayName, userObj)
       
-      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+      if (!permissions.isModerator && !permissions.isBroadcaster) {
         this.sendChatMessage(`${displayName} - Only moderators can add quotes`)
         return
       }
@@ -687,7 +818,7 @@ class TwitchService {
           quoteText,
           this.streamerName || 'Unknown',
           displayName,
-          userInfo.userId
+          permissions.twitchUserId
         )
         
         this.sendChatMessage(`${displayName} - Quote #${quote.id} added successfully!`)
@@ -701,9 +832,9 @@ class TwitchService {
 
     // Delete quote command (moderator only)
     if (message.toLowerCase().startsWith('!delquote ')) {
-      const userInfo = await this.getUserInfo(displayName)
+      const permissions = await this.getPermissions(displayName, userObj)
       
-      if (!userInfo.isModerator && !userInfo.isBroadcaster) {
+      if (!permissions.isModerator && !permissions.isBroadcaster) {
         this.sendChatMessage(`${displayName} - Only moderators can delete quotes`)
         return
       }
@@ -737,13 +868,13 @@ class TwitchService {
       const matchingCommand = await this.customCommandsService.findMatchingCommand(message)
 
       if (matchingCommand) {
-        // Get user information for permission checking
-        const userInfo = await this.getUserInfo(displayName)
+        // Get user permissions (real-time if available)
+        const permissions = await this.getPermissions(displayName, userObj)
 
         const executed = await this.customCommandsService.executeCommand(
           matchingCommand.trigger,
           displayName,
-          userInfo,
+          permissions,
           this.sendChatMessage.bind(this)
         )
 
@@ -771,7 +902,37 @@ class TwitchService {
   }
 
   /**
-   * Get user information for permission checking
+   * Get real-time permissions from chat user object, with database fallback
+   */
+  async getPermissions(displayName, userObj = null) {
+    if (userObj) {
+      // Use real-time permission data from chat message
+      return {
+        isModerator: userObj.isMod || false,
+        isBroadcaster: userObj.isBroadcaster || false,
+        isVip: userObj.isVip || false,
+        isSubscriber: userObj.isSubscriber || false,
+        twitchUserId: userObj.userId || null,
+        displayName: userObj.displayName || displayName,
+        source: 'realtime'
+      }
+    } else {
+      // Fallback to database/config permissions
+      const userInfo = await this.getUserInfo(displayName)
+      return {
+        isModerator: userInfo.isModerator,
+        isBroadcaster: userInfo.isBroadcaster,
+        isVip: userInfo.isVip,
+        isSubscriber: userInfo.isSubscriber,
+        twitchUserId: userInfo.twitchUserId,
+        displayName: userInfo.displayName,
+        source: 'database'
+      }
+    }
+  }
+
+  /**
+   * Get user information for permission checking (legacy method - prefer getPermissions)
    */
   async getUserInfo(username) {
     try {
@@ -785,7 +946,9 @@ class TwitchService {
         isModerator: user?.is_moderator || this.modlist.includes(username),
         isSubscriber: user?.is_subscriber || false,
         isVip: user?.is_vip || false,
-        isAdmin: user?.is_admin || false
+        isAdmin: user?.is_admin || false,
+        twitchUserId: user?.twitch_user_id || null,
+        isBroadcaster: user?.twitch_user_id === this.streamerID || username.toLowerCase() === this.myChannel.toLowerCase()
       }
     } catch (error) {
       logger.error('Failed to get user info', { username, error })
@@ -798,7 +961,9 @@ class TwitchService {
         isModerator: this.isBotMod(username),
         isSubscriber: false,
         isVip: false,
-        isAdmin: false
+        isAdmin: false,
+        twitchUserId: null,
+        isBroadcaster: username.toLowerCase() === this.myChannel.toLowerCase()
       }
     }
   }
