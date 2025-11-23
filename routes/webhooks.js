@@ -52,6 +52,17 @@ function processEventSub(event, res) {
         userInput
       })
 
+      // Broadcast redemption to chat page
+      if (websocketService) {
+        websocketService.broadcast({
+          type: 'redemption',
+          user: viewerName,
+          rewardTitle: newEvent,
+          userInput: userInput,
+          timestamp: new Date().toISOString()
+        })
+      }
+
       actionEventSub(newEvent, userInput, viewerName, websocketService)
 
     } else if (eventType === "channel.subscribe") {

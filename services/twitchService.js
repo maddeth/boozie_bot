@@ -10,12 +10,16 @@ import { changeColourEvent } from './colourService.js'
 import TTSService from './ttsService.js'
 import CustomCommandsService from './customCommandsService.js'
 import { getUserByUsername, getOrCreateUser } from './userService.js'
+import EmoteService from './emoteService.js'
+import ChatGPTService from './chatGPTService.js'
 
 class TwitchService {
   constructor(websocketService) {
     this.websocketService = websocketService
     this.ttsService = new TTSService()
     this.customCommandsService = new CustomCommandsService(websocketService)
+    this.emoteService = new EmoteService()
+    this.chatGPTService = new ChatGPTService(this.ttsService, websocketService)
     this.poolService = null // Will be initialized asynchronously
     this.chatClient = null
     this.api = null
@@ -65,6 +69,14 @@ class TwitchService {
       // Add channel owner token for moderation API calls
       await this.authProvider.addUserForToken(channelTokenData, ['moderation:read'])
 
+      // Initialize ChatGPT service with API key
+      if (config.openai?.apiKey && config.openai.apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
+        this.chatGPTService.setApiKey(config.openai.apiKey)
+        logger.info('ChatGPT service configured')
+      } else {
+        logger.warn('ChatGPT service not configured - missing API key')
+      }
+
       // Setup clients
       this.chatClient = new ChatClient({ authProvider: this.authProvider, channels: [this.myChannel] })
       this.api = new ApiClient({ authProvider: this.authProvider })
@@ -84,7 +96,9 @@ class TwitchService {
             isVip: msg.userInfo.isVip,
             isSubscriber: msg.userInfo.isSubscriber,
             isBroadcaster: msg.userInfo.isBroadcaster,
-            badges: msg.badges
+            badges: msg.badges,
+            color: msg.userInfo.color,
+            emoteOffsets: msg.emoteOffsets
           }
           displayName = msg.userInfo.displayName || user
         }
@@ -106,6 +120,18 @@ class TwitchService {
 
       await this.chatClient.connect()
       logger.info('Twitch chat client connected', { channel: this.myChannel })
+
+      // Load emotes from all providers
+      const accessToken = await this.authProvider.getAccessTokenForUser(this.boozieBotUserID)
+      await this.emoteService.loadAllEmotes(this.streamerID, accessToken.accessToken)
+
+      // Send emote data to connected clients
+      if (this.websocketService) {
+        this.websocketService.broadcastImmediate({
+          type: 'emotes',
+          emotes: this.emoteService.getAllEmotes()
+        })
+      }
 
       // Fetch initial chatters
       await this.fetchChatters()
@@ -172,11 +198,124 @@ class TwitchService {
     }
   }
 
+  parseMessageWithFragments(message, userObj) {
+    // Get Twitch emote positions from message fragments
+    const twitchEmoteOffsets = userObj?.emoteOffsets || new Map()
+
+    // Create an array to build the parsed message
+    const fragments = []
+    let lastIndex = 0
+
+    // Sort Twitch emotes by position to process in order
+    const twitchEmotes = []
+    for (const [emoteId, positions] of twitchEmoteOffsets) {
+      for (const positionRange of positions) {
+        const [start, end] = positionRange.split('-').map(Number)
+        twitchEmotes.push({
+          emoteId,
+          start,
+          end: end + 1, // Make end exclusive
+          url: `https://static-cdn.jtvnw.net/emoticons/v2/${emoteId}/default/dark/2.0`
+        })
+      }
+    }
+
+    // Sort by start position
+    twitchEmotes.sort((a, b) => a.start - b.start)
+
+    // Process Twitch emotes first (they have exact positions)
+    for (const emote of twitchEmotes) {
+      // Add text before this emote
+      if (lastIndex < emote.start) {
+        const textSegment = message.substring(lastIndex, emote.start)
+        if (textSegment.trim()) {
+          // Parse this text segment for third-party emotes
+          this.parseTextForThirdPartyEmotes(textSegment, fragments)
+        }
+      }
+
+      // Add the Twitch emote
+      fragments.push({
+        type: 'emote',
+        content: {
+          name: message.substring(emote.start, emote.end),
+          url: emote.url,
+          provider: 'twitch'
+        }
+      })
+
+      lastIndex = emote.end
+    }
+
+    // If no Twitch emotes, parse entire message for third-party emotes
+    if (twitchEmotes.length === 0) {
+      this.parseTextForThirdPartyEmotes(message, fragments)
+    } else {
+      // Process remaining text after last Twitch emote
+      if (lastIndex < message.length) {
+        const remainingText = message.substring(lastIndex)
+        this.parseTextForThirdPartyEmotes(remainingText, fragments)
+      }
+    }
+
+    return fragments
+  }
+
+  parseTextForThirdPartyEmotes(text, fragments) {
+    // Split text into words and check each for BTTV/7TV emotes
+    const words = text.split(/(\s+)/) // Split but keep whitespace
+
+    for (const word of words) {
+      if (word.trim() === '') {
+        // Whitespace
+        if (word) {
+          fragments.push({
+            type: 'text',
+            content: word
+          })
+        }
+      } else {
+        // Check if this word is a third-party emote
+        const emote = this.emoteService.getEmoteByName(word.trim())
+        if (emote && emote.provider !== 'twitch') {
+          fragments.push({
+            type: 'emote',
+            content: emote
+          })
+        } else {
+          fragments.push({
+            type: 'text',
+            content: word
+          })
+        }
+      }
+    }
+  }
+
   async processMessage(displayName, message, userObj = null) {
     let unformattedMessage = message
     message = message.toLowerCase()
 
     logger.debug('Processing chat message', { user: displayName, message: message.substring(0, 100) })
+
+    // Parse message for emotes using Twitch's message fragments and third-party emotes
+    const parsedMessage = this.parseMessageWithFragments(unformattedMessage, userObj)
+
+    // Broadcast chat message to WebSocket clients (for chat view)
+    if (this.websocketService) {
+      this.websocketService.broadcast({
+        type: 'chat',
+        user: displayName,
+        message: unformattedMessage,
+        parsedMessage: parsedMessage,
+        isMod: userObj?.isMod || false,
+        isVip: userObj?.isVip || false,
+        isSubscriber: userObj?.isSubscriber || false,
+        isBroadcaster: userObj?.isBroadcaster || false,
+        color: userObj?.color || null,
+        timestamp: new Date().toISOString()
+      })
+    }
 
     // Ensure user exists in database when they send a message
     try {
@@ -320,6 +459,31 @@ class TwitchService {
       return
     }
 
+    if (message.startsWith("!ai") || message.startsWith("!chatgpt")) {
+      const command = message.startsWith("!ai") ? "!ai" : "!chatgpt"
+      const prompt = message.slice(command.length).trim()
+
+      if (!prompt) {
+        this.sendChatMessage(`${displayName} - Please provide a message after ${command}`)
+        return
+      }
+
+      try {
+        const result = await this.chatGPTService.processAIRequest(displayName, prompt)
+
+        if (!result.success) {
+          this.sendChatMessage(`${displayName} - ${result.error}`)
+        } else if (result.chatResponse) {
+          // Send Geraint's response to chat as well as TTS
+          this.sendChatMessage(`${result.chatResponse}`)
+        }
+      } catch (error) {
+        logger.error('AI command failed', { user: displayName, prompt, error })
+        this.sendChatMessage(`${displayName} - Sorry, something went wrong with the AI`)
+      }
+      return
+    }
+
     if (message.startsWith("!reloadcommands")) {
       if (await this.isBotMod(displayName)) {
         try {
@@ -332,6 +496,36 @@ class TwitchService {
       } else {
         this.sendChatMessage(`${displayName} - Only moderators can reload commands`)
       }
+      return
+    }
+
+    // ChatGPT admin commands (moderator only)
+    if (message.startsWith("!aimodel") && await this.isBotMod(displayName)) {
+      const model = message.slice(8).trim()
+      if (!model) {
+        this.sendChatMessage(`${displayName} - Current model: ${this.chatGPTService.model}.`)
+      } else {
+        this.chatGPTService.setModel(model)
+        this.sendChatMessage(`${displayName} - AI model set to: ${model}`)
+      }
+      return
+    }
+
+    if (message.startsWith("!aicooldown") && await this.isBotMod(displayName)) {
+      const seconds = parseInt(message.slice(11).trim())
+      if (isNaN(seconds) || seconds < 0) {
+        const current = this.chatGPTService.cooldownDuration / 1000
+        this.sendChatMessage(`${displayName} - Current AI cooldown: ${current} seconds`)
+      } else {
+        this.chatGPTService.setCooldown(seconds)
+        this.sendChatMessage(`${displayName} - AI cooldown set to: ${seconds} seconds`)
+      }
+      return
+    }
+
+    if (message.startsWith("!aistats") && await this.isBotMod(displayName)) {
+      const stats = this.chatGPTService.getStats()
+      this.sendChatMessage(`${displayName} - AI Stats: ${stats.configured ? 'Configured' : 'Not configured'} | Model: ${stats.model} | Cooldown: ${stats.cooldown}s | Active users: ${stats.activeUsers}`)
       return
     }
 
@@ -371,7 +565,7 @@ class TwitchService {
           }
 
           // Add built-in commands
-          commandMessage += ' | Built-in: !eggs, !topeggs, !quote, !pool, !donate, !pools, !createpool (moderator), !deletepool (moderator), !mergeeggs (moderator)'
+          commandMessage += ' | Built-in: !ai, !eggs, !topeggs, !quote, !pool, !donate, !pools, !createpool (moderator), !deletepool (moderator), !mergeeggs (moderator)'
 
           // Truncate if too long for Twitch chat (500 char limit)
           if (commandMessage.length > 450) {
@@ -409,7 +603,7 @@ class TwitchService {
             }
           }
 
-          const userEggs = await getUserEggs(targetTwitchUserId || targetUsername)
+          const userEggs = await getUserEggs(targetTwitchUserId || targetUsername, targetUsername)
 
           if (!userEggs) {
             this.sendChatMessage(`${displayName} - ${targetUsername} has no eggs yet!`)
@@ -424,7 +618,7 @@ class TwitchService {
         // !eggs - check your own eggs
         try {
           const userInfo = await this.getUserInfo(displayName)
-          const userEggs = await getUserEggs(userInfo.twitchUserId || displayName)
+          const userEggs = await getUserEggs(userInfo.twitchUserId || displayName, displayName)
 
           if (!userEggs) {
             this.sendChatMessage(`${displayName} - You have no eggs yet! Keep chatting to earn some 🥚`)

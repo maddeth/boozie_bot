@@ -8,6 +8,7 @@ class WebSocketService {
     this.wss = new WebSocketServer({ port })
     this.heartbeatInterval = 30000 // 30 seconds
     this.heartbeatTimer = null
+    this.cachedEmotes = null // Store emotes to send to new clients
     
     // Connection limits
     this.maxConnectionsPerIP = 5
@@ -73,6 +74,19 @@ class WebSocketService {
       this.connectionsByIP.set(clientIP, ipConnections + 1)
       
       logger.debug('WebSocket client connected', { clientId, clientIP, totalClients: Object.keys(this.connectedClients).length })
+      
+      // Send cached emotes to new client immediately
+      if (this.cachedEmotes) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'emotes',
+            emotes: this.cachedEmotes
+          }))
+          logger.debug('Sent cached emotes to new client', { clientId, emoteCount: this.cachedEmotes.length })
+        } catch (error) {
+          logger.error('Failed to send emotes to new client', { clientId, error })
+        }
+      }
 
       // Set up ping-pong handlers
       ws.on('pong', () => {
@@ -185,6 +199,12 @@ class WebSocketService {
   }
 
   broadcastImmediate(data) {
+    // Cache emotes if this is an emote broadcast
+    if (data.type === 'emotes' && data.emotes) {
+      this.cachedEmotes = data.emotes
+      logger.info('Cached emotes for new clients', { emoteCount: data.emotes.length })
+    }
+    
     // Send message immediately without batching (for high-priority messages)
     const message = JSON.stringify(data)
     const clientCount = Object.keys(this.connectedClients).length

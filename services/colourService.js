@@ -21,7 +21,7 @@ export async function changeColourEvent(eventUserContent, viewer, sendChatMessag
       if (randomColourHex) {
         if (sendChatMessage) {
           sendChatMessage("Your Random Colour is " + randomColour)
-          sendChatMessage("!addeggs " + viewer + " 4")
+          // sendChatMessage("!addeggs " + viewer + " 4")
         }
         await eggUpdateCommand(viewer, 4, false)
         await obsService.changeColour(randomColourHex[0].hex_value)
@@ -41,7 +41,7 @@ export async function changeColourEvent(eventUserContent, viewer, sendChatMessag
     if (selectedColour.length > 0) {
       if (sendChatMessage) {
         sendChatMessage("Your Selected Colour is " + selectRandomColour)
-        sendChatMessage("!addeggs " + viewer + " 4")
+        // sendChatMessage("!addeggs " + viewer + " 4")
       }
       await eggUpdateCommand(viewer, 4, false)
       await obsService.changeColour(selectedColour[0].hex_value)
@@ -63,9 +63,9 @@ export async function changeColourEvent(eventUserContent, viewer, sendChatMessag
         sendChatMessage("According to my list, that colour is " + colours)
       }
     }
-    if (sendChatMessage) {
-      sendChatMessage("!addeggs " + viewer + " 4")
-    }
+    // if (sendChatMessage) {
+    //   // sendChatMessage("!addeggs " + viewer + " 4")
+    // }
     await eggUpdateCommand(viewer, 4, false)
     logger.info('Hex colour applied', { viewer, hex: colourString, foundNames: colourName })
     return
@@ -74,7 +74,7 @@ export async function changeColourEvent(eventUserContent, viewer, sendChatMessag
   else if (findHexInDB.length > 0) {
     if (sendChatMessage) {
       sendChatMessage("That colour is on my list! Congratulations, Here are 4 eggs!")
-      sendChatMessage("!addeggs " + viewer + " 4")
+      // sendChatMessage("!addeggs " + viewer + " 4")
     }
     await eggUpdateCommand(viewer, 4, false)
     await obsService.changeColour(findHexInDB[0].hex_value)

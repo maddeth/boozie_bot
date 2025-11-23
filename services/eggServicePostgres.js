@@ -13,9 +13,10 @@ import dotenv from 'dotenv'
 /**
  * Get user's egg count by Twitch user ID or username
  * @param {string} identifier - Twitch user ID or username
+ * @param {string} username - Optional username for fallback lookup
  * @returns {Object|null} - User egg data or null if not found
  */
-export const getUserEggs = async (identifier) => {
+export const getUserEggs = async (identifier, username = null) => {
   try {
     // Try to find by Twitch user ID first (preferred method)
     let result = await sql(
@@ -25,9 +26,11 @@ export const getUserEggs = async (identifier) => {
 
     // If not found by ID, try by username (fallback for legacy data)
     if (result.length === 0) {
+      // Try with the provided username first if available
+      const searchUsername = username || identifier
       result = await sql(
-        'SELECT * FROM eggs WHERE LOWER(username_sanitised) = LOWER($1)',
-        [identifier]
+        'SELECT * FROM eggs WHERE LOWER(username_sanitised) = LOWER($1) OR LOWER(username) = LOWER($1)',
+        [searchUsername]
       )
     }
 
@@ -68,7 +71,7 @@ export const createOrUpdateUserEggs = async (twitchUserId, username, eggAmount =
     const usernameSanitised = username.toLowerCase()
 
     // Check if user already exists (by Twitch ID or username)
-    const existingUser = await getUserEggs(twitchUserId)
+    const existingUser = await getUserEggs(twitchUserId, username)
 
     if (existingUser) {
       // Update existing user with current username (in case they changed it)
@@ -127,7 +130,7 @@ export const createOrUpdateUserEggs = async (twitchUserId, username, eggAmount =
 export const updateUserEggs = async (twitchUserId, username, eggChange) => {
   try {
     // Get current egg data
-    const currentData = await getUserEggs(twitchUserId) || await getUserEggs(username)
+    const currentData = await getUserEggs(twitchUserId, username)
 
     if (!currentData) {
       // User doesn't exist, create them with the egg change amount (if positive)

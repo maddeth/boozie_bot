@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "dependencies": {
     "@azure/data-tables": "^13.2.2",
+    "@google-cloud/text-to-speech": "^6.4.0",
     "@neondatabase/serverless": "^0.10.4",
     "@twurple/api": "^7.1.0",
     "@twurple/auth": "^7.1.0",
@@ -15,9 +16,13 @@
     "find-remove": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.1",
+    "node-fetch": "^3.3.2",
     "obs-websocket-js": "^5.0.4",
+    "openai": "^5.15.0",
     "pg": "^8.16.3",
     "sequelize": "^6.37.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "ws": "^8.16.0"

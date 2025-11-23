@@ -120,7 +120,7 @@ export async function actionEventSub(eventTitle, eventUserContent, viewer, webso
       // Handle alerts with audio and optional gif
       const redeem = {
         type: "redeem",
-        id: alert.audio,
+        audioUrl: alert.audio,
         ...(alert.gifUrl && { gifUrl: alert.gifUrl }),
         ...(alert.duration && { duration: alert.duration })
       }

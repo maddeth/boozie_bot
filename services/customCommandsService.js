@@ -267,7 +267,7 @@ class CustomCommandsService {
       if (command.audio_url && this.websocketService) {
         this.websocketService.broadcast({
           type: 'redeem',
-          id: command.audio_url
+          audioUrl: command.audio_url
         })
         logger.debug('Sent audio command to WebSocket', {
           trigger,
